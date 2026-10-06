@@ -1,6 +1,9 @@
 package official
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type ChatCompletionChunk struct {
 	ID      string    `json:"id"`
@@ -37,7 +40,7 @@ func NewChatCompletionChunk(text string) ChatCompletionChunk {
 	return ChatCompletionChunk{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion.chunk",
-		Created: 0,
+		Created: time.Now().Unix(),
 		Model:   "gpt-4o-mini",
 		Choices: []Choices{
 			{
@@ -55,7 +58,7 @@ func NewChatCompletionChunkWithModel(text string, model string) ChatCompletionCh
 	return ChatCompletionChunk{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion.chunk",
-		Created: 0,
+		Created: time.Now().Unix(),
 		Model:   model,
 		Choices: []Choices{
 			{
@@ -73,7 +76,7 @@ func StopChunkWithModel(reason string, model string) ChatCompletionChunk {
 	return ChatCompletionChunk{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion.chunk",
-		Created: 0,
+		Created: time.Now().Unix(),
 		Model:   model,
 		Choices: []Choices{
 			{
@@ -88,7 +91,7 @@ func StopChunk(reason string) ChatCompletionChunk {
 	return ChatCompletionChunk{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion.chunk",
-		Created: 0,
+		Created: time.Now().Unix(),
 		Model:   "gpt-4o-mini",
 		Choices: []Choices{
 			{
@@ -109,7 +112,7 @@ func UsageChunk(model string, promptTokens, completionTokens, cachedTokens int, 
 	return ChatCompletionChunk{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion.chunk",
-		Created: 0,
+		Created: time.Now().Unix(),
 		Model:   model,
 		Choices: []Choices{},
 		Usage: &usage{
@@ -304,7 +307,7 @@ func NewToolCallChunk(model string, calls []ToolCallChunk) ChatCompletionChunk {
 	return ChatCompletionChunk{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion.chunk",
-		Created: 0,
+		Created: time.Now().Unix(),
 		Model:   model,
 		Choices: []Choices{{Index: 0, Delta: Delta{ToolCalls: calls}}},
 	}
@@ -315,7 +318,7 @@ func NewChatCompletionToolCalls(model string, calls []ToolCallChunk, promptToken
 	return ChatCompletion{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion",
-		Created: 0,
+		Created: time.Now().Unix(),
 		Model:   model,
 		Usage: usage{
 			PromptTokens:     int(promptTokens),
@@ -339,7 +342,7 @@ func NewChatCompletionFull(text, model string, promptTokens, completionTokens, c
 	return ChatCompletion{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion",
-		Created: int64(0),
+		Created: time.Now().Unix(),
 		Model:   model,
 		Usage: usage{
 			PromptTokens:        int(promptTokens),
@@ -371,7 +374,7 @@ func NewChatCompletion(full_test string, input_tokens, output_tokens int) ChatCo
 	return ChatCompletion{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion",
-		Created: int64(0),
+		Created: time.Now().Unix(),
 		Model:   "gpt-4o-mini",
 		Usage: usage{
 			PromptTokens:     input_tokens,
