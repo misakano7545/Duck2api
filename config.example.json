@@ -1,0 +1,9 @@
+{
+  "SERVER_HOST": "0.0.0.0",
+  "SERVER_PORT": "8080",
+  "Authorization": "",
+  "PROXY_URL": "",
+  "PREFIX": "",
+  "TLS_CERT": "",
+  "TLS_KEY": ""
+}

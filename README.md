@@ -190,11 +190,29 @@ curl http://localhost:8080/v1/audio/speech \
 
 ## 高级设置
 
+### 配置文件 config.json
+
+把配置写在项目根目录的 `config.json` 里（照抄 [`config.example.json`](config.example.json)），**键名就是环境变量名**：
+
+```json
+{
+  "SERVER_HOST": "0.0.0.0",
+  "SERVER_PORT": "8080",
+  "Authorization": "your_key",
+  "PROXY_URL": "http://proxy:8080",
+  "PREFIX": "/api"
+}
+```
+
+优先级：**真实环境变量 > `.env` > `config.json`**。文件里没写的键不影响环境变量；同一项两处都有时环境变量赢 —— 所以敏感项适合放部署面板的环境变量，非敏感项放文件。
+
+`config.json` 已在 `.gitignore` 里（不会被提交），提交的是 `config.example.json`。
+
 ### 环境变量
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `Authorization` | API 认证 Key | `Bearer your_key` |
+| `Authorization` | API 认证 Key（**只填 key 本身，不要带 `Bearer `**；客户端请求时带 `Authorization: Bearer <key>`） | `your_key` |
 | `PROXY_URL` | 代理地址 | `http://proxy:8080` |
 | `PREFIX` | URL 前缀 | `/api` |
 | `TLS_CERT` | TLS 证书路径 | `/path/to/cert.pem` |

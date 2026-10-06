@@ -15,6 +15,8 @@ tools/authenticator/.proxies.txt.swp
 /bin/
 *.js
 *.json
+# 但配置样例要进仓库（config.json 本身仍被上面的 *.json 忽略）
+!config.example.json
 *.bin
 *.exe
 .playwright-mcp/
