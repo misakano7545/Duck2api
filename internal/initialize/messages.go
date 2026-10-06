@@ -19,6 +19,7 @@ import (
 // anthropicStreamResult holds the output-side telemetry for an Anthropic request.
 type anthropicStreamResult struct {
 	text         string
+	toolCalls    []duckgo.ToolCall
 	outputTokens int
 	ttftMs       int64
 	totalMs      int64
@@ -83,7 +84,7 @@ func (h *Handler) messagesHandler(c *gin.Context) {
 	setCacheHeaders(c, promptHash, cacheCreation, cacheRead)
 
 	start := time.Now()
-	result := handleAnthropicStream(c, response.Body, req.Model, req.Stream, start, inputTokens, cacheCreation, cacheRead, effort)
+	result := handleAnthropicStream(c, response.Body, req.Model, req.Stream, start, inputTokens, cacheCreation, cacheRead, effort, len(req.Tools) > 0)
 
 	// Timing headers (only delivered for non-stream; for stream the same values
 	// live in the message_delta event).
@@ -101,8 +102,9 @@ func (h *Handler) messagesHandler(c *gin.Context) {
 
 // handleAnthropicStream reads DuckDuckGo's text SSE and emits Anthropic SSE events.
 // For non-stream it accumulates the text and returns the result.
-func handleAnthropicStream(c *gin.Context, body io.ReadCloser, model string, stream bool, start time.Time, inputTokens, cacheCreation, cacheRead int, effort string) anthropicStreamResult {
+func handleAnthropicStream(c *gin.Context, body io.ReadCloser, model string, stream bool, start time.Time, inputTokens, cacheCreation, cacheRead int, effort string, hasTools bool) anthropicStreamResult {
 	defer body.Close()
+	gate := duckgo.NewStreamGate(hasTools)
 
 	reader := bufio.NewReader(body)
 	if stream {
@@ -172,11 +174,12 @@ func handleAnthropicStream(c *gin.Context, body io.ReadCloser, model string, str
 			ttftMs = time.Since(start).Milliseconds()
 		}
 
-		if stream {
+		emit, hold := gate.Push(delta.Message)
+		if stream && !hold && emit != "" {
 			writeEvent(c, "content_block_delta", anthropic.ContentBlockDeltaEvent{
 				Type:  "content_block_delta",
 				Index: 0,
-				Delta: anthropic.ContentDelta{Type: "text_delta", Text: delta.Message},
+				Delta: anthropic.ContentDelta{Type: "text_delta", Text: emit},
 			})
 		}
 	}
@@ -185,11 +188,32 @@ func handleAnthropicStream(c *gin.Context, body io.ReadCloser, model string, str
 	outputTokens := util.CountToken(fullText)
 	totalMs := time.Since(start).Milliseconds()
 
+	var toolCalls []duckgo.ToolCall
+	stopReason := "end_turn"
+	if gate.Holding() {
+		toolCalls = duckgo.ParseToolCalls(gate.Buffered())
+		if len(toolCalls) > 0 {
+			stopReason = "tool_use"
+		}
+	}
+
 	if stream {
 		writeEvent(c, "content_block_stop", anthropic.ContentBlockStopEvent{Type: "content_block_stop", Index: 0})
+		// 工具调用作为第二个 block 下发(index 1); 前面那个空的 text block 留着, 客户端可忽略
+		for i, call := range toolCalls {
+			writeEvent(c, "content_block_start", anthropic.ContentBlockStartEvent{
+				Type: "content_block_start", Index: i + 1,
+				ContentBlock: anthropic.ContentBlock{Type: "tool_use", ID: "toolu_" + util.RandomHexadecimalString(), Name: call.Name, Input: []byte(call.Arguments)},
+			})
+			writeEvent(c, "content_block_delta", anthropic.ContentBlockDeltaEvent{
+				Type: "content_block_delta", Index: i + 1,
+				Delta: anthropic.ContentDelta{Type: "input_json_delta", PartialJSON: call.Arguments},
+			})
+			writeEvent(c, "content_block_stop", anthropic.ContentBlockStopEvent{Type: "content_block_stop", Index: i + 1})
+		}
 		writeEvent(c, "message_delta", anthropic.MessageDeltaEvent{
 			Type:  "message_delta",
-			Delta: anthropic.MessageDelta{StopReason: "end_turn"},
+			Delta: anthropic.MessageDelta{StopReason: stopReason},
 			Usage: anthropic.AnthropicUsage{OutputTokens: outputTokens},
 		})
 		writeEvent(c, "message_stop", anthropic.MessageStopEvent{Type: "message_stop"})
@@ -198,6 +222,7 @@ func handleAnthropicStream(c *gin.Context, body io.ReadCloser, model string, str
 
 	return anthropicStreamResult{
 		text:         fullText,
+		toolCalls:    toolCalls,
 		outputTokens: outputTokens,
 		ttftMs:       ttftMs,
 		totalMs:      totalMs,
@@ -223,13 +248,25 @@ func buildAnthropicResponse(model string, r anthropicStreamResult, inputTokens, 
 		CacheCreationInputTokens: cacheCreation,
 		CacheReadInputTokens:     cacheRead,
 	}
+	content := []anthropic.ContentBlock{{Type: "text", Text: r.text}}
+	stopReason := "end_turn"
+	if len(r.toolCalls) > 0 {
+		content = make([]anthropic.ContentBlock, 0, len(r.toolCalls))
+		for _, call := range r.toolCalls {
+			content = append(content, anthropic.ContentBlock{
+				Type: "tool_use", ID: "toolu_" + util.RandomHexadecimalString(),
+				Name: call.Name, Input: []byte(call.Arguments),
+			})
+		}
+		stopReason = "tool_use"
+	}
 	return anthropic.MessagesResponse{
 		ID:         "msg_" + util.RandomHexadecimalString(),
 		Type:       "message",
 		Role:       "assistant",
 		Model:      model,
-		Content:    []anthropic.ContentBlock{{Type: "text", Text: r.text}},
-		StopReason: "end_turn",
+		Content:    content,
+		StopReason: stopReason,
 		Usage:      usage,
 	}
 }

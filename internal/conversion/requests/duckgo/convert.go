@@ -1,12 +1,15 @@
 package duckgo
 
 import (
+	dkgo "aurora/internal/duckgo"
 	duckgotypes "aurora/internal/typings/duckgo"
 	officialtypes "aurora/internal/typings/official"
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"image"
 	"image/draw"
 	"image/jpeg"
@@ -35,6 +38,21 @@ func capReasoningEffort(model string, effort string) string {
 	default:
 		return "low"
 	}
+}
+
+// contentText 把消息内容压成纯文本(工具历史/系统提示这类不需要多模态的场合用)。
+func contentText(content interface{}) string {
+	if s, ok := content.(string); ok {
+		return s
+	}
+	if content == nil {
+		return ""
+	}
+	b, err := json.Marshal(content)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func ConvertAPIRequest(apiRequest officialtypes.APIRequest) duckgotypes.ApiRequest {
@@ -76,18 +94,56 @@ func ConvertAPIRequestWithOptions(apiRequest officialtypes.APIRequest, reasoning
 		duckgoRequest.Metadata.ToolChoice.WebSearch = true
 	}
 
+	// 上游只有文本通道, 工具历史折叠成文本(与 anthropic/convert.go 同一口径),
+	// 否则 agent 的多轮 loop 会掉上下文: tool 结果被丢、助手那次调用也看不见。
+	// 工具约定文本(上游没有函数调用通道): 位置很关键 ——
+	// 紧随首条消息: 第一轮时它是最新那条(模型才肯照格式吐调用), 后续轮次工具结果排在它后面(模型据此收口)。
+	// 放开头(旧写法)模型会无视; 放结尾(旧写法)第二轮模型会对它回 "已了解" 而不干活。
+	toolInstruction := ""
+	if apiRequest.Tools != nil {
+		if b, err := json.Marshal(apiRequest.Tools); err == nil {
+			toolInstruction = dkgo.ToolInstruction(string(b))
+		}
+	}
+	inserted := false
+	var pendingCalls []string
 	for _, message := range apiRequest.Messages {
+		if toolInstruction != "" && !inserted && len(duckgoRequest.Messages) > 0 {
+			if parts := extractContentParts(toolInstruction); len(parts) > 0 {
+				duckgoRequest.AddMessageWithParts("user", parts)
+			}
+			inserted = true
+		}
 		role := message.Role
-		if role == "system" {
+		content := message.Content
+		switch role {
+		case "system", "tool":
 			role = "user"
+			if message.Role == "tool" {
+				content = "[工具结果] " + contentText(content)
+			}
+		case "assistant":
+			for _, call := range message.ToolCalls {
+				pendingCalls = append(pendingCalls, fmt.Sprintf("[调用工具] %s %s", call.Function.Name, call.Function.Arguments))
+			}
+			if text := contentText(content); text != "" {
+				pendingCalls = append(pendingCalls, text)
+			}
+			content = strings.Join(pendingCalls, "\n")
+			pendingCalls = nil
 		}
 		if role != "user" && role != "assistant" {
 			continue
 		}
 
-		parts := extractContentParts(message.Content)
+		parts := extractContentParts(content)
 		if len(parts) > 0 {
 			duckgoRequest.AddMessageWithParts(role, parts)
+		}
+	}
+	if toolInstruction != "" && !inserted {
+		if parts := extractContentParts(toolInstruction); len(parts) > 0 {
+			duckgoRequest.AddMessageWithParts("user", parts)
 		}
 	}
 	duckgoRequest.DurableStream = newDurableStream()

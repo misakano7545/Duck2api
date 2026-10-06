@@ -13,11 +13,18 @@ type APIRequest struct {
 	// Extra fields for Duck.ai features (not standard OpenAI)
 	ReasoningEffort string `json:"reasoning_effort,omitempty"` // "none", "low", "medium", "high"
 	WebSearch       *bool  `json:"web_search,omitempty"`       // enable web search
+	// Tools / ToolChoice: 函数调用定义。上游 duck.ai 没有函数调用通道, 由
+	// internal/conversion/requests/duckgo 把它们注入提示词模拟, 见 internal/duckgo/toolcall.go。
+	Tools      interface{} `json:"tools,omitempty"`
+	ToolChoice interface{} `json:"tool_choice,omitempty"`
 }
 
 type ApiMessage struct {
 	Role    string      `json:"role"`
 	Content interface{} `json:"content"`
+	// ToolCalls 是助手历史里的工具调用; DuckDuckGo 只有文本通道, 转换时会折叠成文本
+	// 以保持多轮历史连贯(详见 conversion/requests/duckgo)。
+	ToolCalls []ToolCallChunk `json:"tool_calls,omitempty"`
 }
 
 type ResponseAPIRequest struct {

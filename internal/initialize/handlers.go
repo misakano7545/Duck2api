@@ -110,6 +110,7 @@ func (h *Handler) duckduckgo(c *gin.Context) {
 	start := time.Now()
 	stats := duckgo.HandlerStats{
 		Start:        start,
+		Tools:        original_request.Tools != nil,
 		PromptTokens: inputTokens,
 		CachedTokens: cachedTokens,
 		Effort:       effort,
@@ -130,6 +131,12 @@ func (h *Handler) duckduckgo(c *gin.Context) {
 		return
 	}
 	if !original_request.Stream {
+		// 模型要调工具: 按 OpenAI 原生结构回写, finish_reason=tool_calls
+		if len(result.ToolCalls) > 0 {
+			c.JSON(200, officialtypes.NewChatCompletionToolCalls(original_request.Model, duckgo.OfficialToolCalls(result.ToolCalls),
+				int64(inputTokens), int64(result.OutputTokens), result.TTFTMs, result.TotalMs))
+			return
+		}
 		c.JSON(200, officialtypes.NewChatCompletionFull(
 			result.Text,
 			translated_request.Model,

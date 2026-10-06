@@ -28,8 +28,9 @@ type Choices struct {
 }
 
 type Delta struct {
-	Content string `json:"content,omitempty"`
-	Role    string `json:"role,omitempty"`
+	Content   string          `json:"content,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	ToolCalls []ToolCallChunk `json:"tool_calls,omitempty"`
 }
 
 func NewChatCompletionChunk(text string) ChatCompletionChunk {
@@ -140,6 +141,8 @@ type ChatCompletion struct {
 type Msg struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// ToolCalls 非空时按 OpenAI 规范应把 content 置空; 这里保持空串, 客户端都以 tool_calls 为准
+	ToolCalls []ToolCallChunk `json:"tool_calls,omitempty"`
 }
 type Choice struct {
 	Index        int         `json:"index"`
@@ -281,6 +284,53 @@ func NewChatCompletionWithModel(text string, model string) ChatCompletion {
 }
 
 // NewChatCompletionFull builds a non-stream ChatCompletion with usage, cache breakdown and timing.
+// ToolCallFunction / ToolCallChunk 是 OpenAI 原生 tool_calls 结构。
+// 工具调用由提示词模拟得到(见 internal/duckgo/toolcall.go), 解析后一次成型下发,
+// 所以不分片(流式也只用 index 0 发一整块), 符合规范且客户端都能收。
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type ToolCallChunk struct {
+	Index    int              `json:"index"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+// NewToolCallChunk 流式: 一次性下发 tool_calls。
+func NewToolCallChunk(model string, calls []ToolCallChunk) ChatCompletionChunk {
+	return ChatCompletionChunk{
+		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
+		Object:  "chat.completion.chunk",
+		Created: 0,
+		Model:   model,
+		Choices: []Choices{{Index: 0, Delta: Delta{ToolCalls: calls}}},
+	}
+}
+
+// NewChatCompletionToolCalls 非流式: finish_reason=tool_calls 的响应。
+func NewChatCompletionToolCalls(model string, calls []ToolCallChunk, promptTokens, completionTokens, ttftMs, totalMs int64) ChatCompletion {
+	return ChatCompletion{
+		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
+		Object:  "chat.completion",
+		Created: 0,
+		Model:   model,
+		Usage: usage{
+			PromptTokens:     int(promptTokens),
+			CompletionTokens: int(completionTokens),
+			TotalTokens:      int(promptTokens + completionTokens),
+		},
+		Choices: []Choice{{
+			Index:        0,
+			Message:      Msg{Role: "assistant", ToolCalls: calls},
+			FinishReason: "tool_calls",
+		}},
+		Timing: &Timing{TTFTMs: ttftMs, TotalMs: totalMs},
+	}
+}
+
 func NewChatCompletionFull(text, model string, promptTokens, completionTokens, cachedTokens, ttftMs, totalMs int64, effort string) ChatCompletion {
 	var details *promptTokensDetails
 	if cachedTokens > 0 {

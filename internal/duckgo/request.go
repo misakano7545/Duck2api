@@ -350,11 +350,14 @@ type HandlerStats struct {
 	PromptTokens int
 	CachedTokens int
 	Effort       string
+	// Tools 表示本次请求带了工具定义, 需要走闸门判定模型是否要调工具。
+	Tools bool
 }
 
 // StreamResult is what Handler returns: the full text plus output-side telemetry.
 type StreamResult struct {
 	Text         string
+	ToolCalls    []ToolCall
 	OutputTokens int
 	TTFTMs       int64
 	TotalMs      int64
@@ -373,6 +376,8 @@ func Handler(c *gin.Context, response *http.Response, oldRequest duckgotypes.Api
 	var previousText strings.Builder
 	var firstTokenSet bool
 	var ttftMs int64
+	gate := NewStreamGate(stats.Tools)
+	var toolCalls []ToolCall
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -402,8 +407,11 @@ func Handler(c *gin.Context, response *http.Response, oldRequest duckgotypes.Api
 					firstTokenSet = true
 					ttftMs = time.Since(stats.Start).Milliseconds()
 				}
-				translatedResponse := officialtypes.NewChatCompletionChunkWithModel(originalResponse.Message, originalResponse.Model)
-				responseString = "data: " + translatedResponse.String() + "\n\n"
+				// 带工具的请求先过闸门: 模型要调工具时这段不发, 攒到收尾一次性发 tool_calls。
+				if emit, hold := gate.Push(originalResponse.Message); !hold && emit != "" {
+					translatedResponse := officialtypes.NewChatCompletionChunkWithModel(emit, originalResponse.Model)
+					responseString = "data: " + translatedResponse.String() + "\n\n"
+				}
 			}
 
 			if responseString == "" {
@@ -418,8 +426,24 @@ func Handler(c *gin.Context, response *http.Response, oldRequest duckgotypes.Api
 				c.Writer.Flush()
 			}
 		} else {
+			// 流结束: 扣住的若确实是工具调用, 先补发 tool_calls 再发 stop。
+			reason := "stop"
+			if gate.Holding() {
+				toolCalls = ParseToolCalls(gate.Buffered())
+				if len(toolCalls) > 0 {
+					reason = "tool_calls"
+				}
+			}
 			if stream {
-				final_line := officialtypes.StopChunkWithModel("stop", oldRequest.Model)
+				if len(toolCalls) > 0 {
+					chunk := officialtypes.NewToolCallChunk(oldRequest.Model, OfficialToolCalls(toolCalls))
+					c.Writer.WriteString("data: " + chunk.String() + "\n\n")
+				} else if gate.Holding() && gate.Buffered() != "" {
+					// 兜底: 看着像标记但解析不出来, 当普通文本补发, 别让客户端收空
+					chunk := officialtypes.NewChatCompletionChunkWithModel(gate.Buffered(), oldRequest.Model)
+					c.Writer.WriteString("data: " + chunk.String() + "\n\n")
+				}
+				final_line := officialtypes.StopChunkWithModel(reason, oldRequest.Model)
 				c.Writer.WriteString("data: " + final_line.String() + "\n\n")
 			}
 		}
@@ -446,6 +470,7 @@ func Handler(c *gin.Context, response *http.Response, oldRequest duckgotypes.Api
 
 	return StreamResult{
 		Text:         fullText,
+		ToolCalls:    toolCalls,
 		OutputTokens: outputTokens,
 		TTFTMs:       ttftMs,
 		TotalMs:      totalMs,

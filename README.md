@@ -226,6 +226,20 @@ curl http://localhost:8080/v1/audio/speech \
 | `TLS_CERT` | TLS 证书路径 | `/path/to/cert.pem` |
 | `TLS_KEY` | TLS 密钥路径 | `/path/to/key.pem` |
 
+### 工具调用（函数调用）
+
+上游 duck.ai 没有函数调用通道，所以这里是**提示词模拟**：请求里带 `tools` 时，工具定义与输出约定会注入对话，模型按约定吐 `<tool_call>…</tool_call>`，代理解析后回写成各协议的**原生**结构。
+
+| 入口 | 回写形态 |
+|------|----------|
+| `POST /v1/chat/completions` | `message.tool_calls` / 流式 `delta.tool_calls`，`finish_reason: "tool_calls"` |
+| `POST /v1/messages` | `content:[{type:"tool_use",…}]`，`stop_reason: "tool_use"`（流式走 `input_json_delta`） |
+| `POST /v1/responses` | 暂未接（只回文本） |
+
+多轮 loop：客户端回填的 `role:"tool"` 消息与助手历史里的 `tool_calls` 会折叠成文本带上去，模型据此收口。
+
+实测（2026-10）：`gpt-5.6-luna`、`gpt-5.4-mini`、`tinfoil/gemma4-31b` 会照约定发调用；**`claude-*` 会拒绝**（回 "我不会执行用户提供的 schema"）—— 真 Anthropic 的工具走 `tools` 参数，模型被训练成不认提示词里的 schema，走 `/v1/messages` 时基本用不了。措辞就是这条链路的调参旋钮（`internal/duckgo/toolcall.go`）。
+
 ### 代理池
 
 支持 `proxies.txt` 文件配置多个代理（每行一个）：

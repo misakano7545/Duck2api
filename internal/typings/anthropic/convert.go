@@ -111,6 +111,11 @@ func ToOpenAPIRequest(req MessagesRequest) officialtypes.APIRequest {
 		out.Messages = append(out.Messages, converted...)
 	}
 
+	// 工具定义带进内部请求, 由 duckgo 转换层注入成提示词(上游没有原生函数调用)。
+	if len(req.Tools) > 0 {
+		out.Tools = req.Tools
+	}
+
 	return out
 }
 
