@@ -111,14 +111,15 @@ curl http://localhost:8080/v1/chat/completions \
 
 ### 图像生成
 
+默认走 **duck.ai 原生图片模型**（`POST /duckchat/v1/chat` + `model=image-generation`）：提示词原样进图，不被聊天模型改写。
+
 ```bash
 curl http://localhost:8080/v1/images/generations \
   -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "一只可爱的猫咪坐在窗台上",
-    "model": "gpt-5.4-nano"
-  }'
+  -d '{"prompt": "一只可爱的猫咪坐在窗台上"}'
 ```
+
+`model` 也可以显式点名一个聊天模型（如 `gpt-5.6-luna`），那就改走「聊天模型 + `GenerateImage` 工具」那条老路：提示词会被上游改写后再送进图像服务。两条路出图不同——原生是 `gpt-image-1.5`，工具路径是 `gpt-image-2`（把返回的 JPEG 丢给 `strings | grep version` 就能看出 C2PA 生成器）。一次请求返回 1 张图；流里那个 `partial-image`/`status:partial` 的扩散中间态（多眼扭曲）不再当输出图返回。
 
 ### 图像编辑
 

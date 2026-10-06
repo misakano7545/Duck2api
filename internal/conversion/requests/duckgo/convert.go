@@ -146,7 +146,8 @@ func ConvertAPIRequestWithOptions(apiRequest officialtypes.APIRequest, reasoning
 			duckgoRequest.AddMessageWithParts("user", parts)
 		}
 	}
-	duckgoRequest.DurableStream = newDurableStream()
+	ds := newDurableStream()
+	duckgoRequest.DurableStream = &ds
 	return duckgoRequest
 }
 

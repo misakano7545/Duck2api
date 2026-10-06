@@ -89,14 +89,16 @@ type messages struct {
 }
 
 type ApiRequest struct {
-	Model                      string        `json:"model"`
-	Metadata                   Metadata      `json:"metadata"`
-	Messages                   []messages    `json:"messages"`
-	CanUseTools                bool          `json:"canUseTools"`
-	ReasoningEffort            string        `json:"reasoningEffort"`
-	CanUseApproxLocation       *bool         `json:"canUseApproxLocation"`
-	CanDelegateImageGeneration *bool         `json:"canDelegateImageGeneration"`
-	DurableStream              DurableStream `json:"durableStream"`
+	Model                      string     `json:"model"`
+	Metadata                   Metadata   `json:"metadata"`
+	Messages                   []messages `json:"messages"`
+	CanUseTools                bool       `json:"canUseTools"`
+	ReasoningEffort            string     `json:"reasoningEffort,omitempty"`
+	CanUseApproxLocation       *bool      `json:"canUseApproxLocation"`
+	CanDelegateImageGeneration *bool      `json:"canDelegateImageGeneration"`
+	// DurableStream 指针 + omitempty：原生图片模型（image-generation）不接受它，
+	// 实测带上空的 durableStream 与不带是两条路（duckmind/p2d-duck 对出图也单独省掉它）。
+	DurableStream *DurableStream `json:"durableStream,omitempty"`
 }
 
 func (a *ApiRequest) AddMessage(role string, content string) {

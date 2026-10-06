@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// NativeImageModel 是 duck.ai 的原生图片模型 id：POST /duckchat/v1/chat 直接带上它，
+// 由模型自己的出图通道出图（提示词原样进图，不被聊天模型改写）。
+// 旧的专用图片端点 /duckchat/v1/images（同一个模型）已 410 ERR_ENDPOINT_DEPRECATED。
+const NativeImageModel = "image-generation"
+
 // ImageResult holds the extracted image data from the SSE stream
 type ImageResult struct {
 	Text   string
@@ -22,6 +27,7 @@ func ReadImageResponse(response *http.Response) ImageResult {
 	reader := bufio.NewReader(response.Body)
 	var textBuilder strings.Builder
 	var images []duckgotypes.ImagePart
+	var drafts []duckgotypes.ImagePart // 扩散中段废稿（多眼/糊），只有拿不到成品时才兜底
 	var imagePrompt string
 
 	for {
@@ -58,6 +64,17 @@ func ReadImageResponse(response *http.Response) ImageResult {
 			}
 		}
 
+		// 原生图片模型（POST /duckchat/v1/chat, model=image-generation）：
+		// role 为 partial-image（扩散中段废稿）/ generated-image（成品），图在 result。
+		if apiResp.Result != "" && (apiResp.Role == "generated-image" || apiResp.Role == "partial-image") {
+			part := duckgotypes.ImagePart{Type: "generated-image", Result: apiResp.Result}
+			if apiResp.Role == "generated-image" {
+				images = append(images, part)
+			} else {
+				drafts = append(drafts, part)
+			}
+		}
+
 		// Extract image from parts (legacy format)
 		for _, part := range apiResp.Parts {
 			if part.Type == "generated-image" || part.Type == "image" {
@@ -68,17 +85,27 @@ func ReadImageResponse(response *http.Response) ImageResult {
 		// Extract image from data field (new format: ui-component with GenerateImage)
 		if apiResp.ToolName == "GenerateImage" && apiResp.Data != nil {
 			if imgData := apiResp.GetImageData(); imgData != nil && imgData.B64Image != "" {
-				images = append(images, duckgotypes.ImagePart{
+				part := duckgotypes.ImagePart{
 					Type:   "generated-image",
 					Result: imgData.B64Image,
 					Format: imgData.Format,
 					Width:  imgData.Width,
 					Height: imgData.Height,
-				})
+				}
+				// status=partial 是同一张图的扩散中间态：当输出图返回会送出一张多眼扭曲的废稿。
+				if imgData.Status == "partial" {
+					drafts = append(drafts, part)
+				} else {
+					images = append(images, part)
+				}
 			}
 		}
 	}
 
+	// 只有废稿、没等到成品（流被截断）时才退回废稿，总比空手好。
+	if len(images) == 0 {
+		images = drafts
+	}
 	return ImageResult{
 		Text:   textBuilder.String(),
 		Images: images,

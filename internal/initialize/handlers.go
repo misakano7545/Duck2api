@@ -439,17 +439,24 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 	}
 
 	// Build a chat request with image generation enabled
-	model := req.Model
-	if model == "" {
-		model = "gpt-5.6-luna"
-	}
-
-	chatReq := officialtypes.APIRequest{
-		Model: model,
-		Messages: []officialtypes.ApiMessage{
-			{Role: "user", Content: req.Prompt},
-		},
-		Stream: false,
+	// 默认走 duck.ai 原生图片模型：POST /duckchat/v1/chat + model=image-generation，
+	// 提示词原样进图（不被聊天模型改写）。显式点名一个聊天模型时才走旧路径
+	// 「聊天模型 + GenerateImage 工具」（那条路出图由 gpt-image-2 出，原生的是 gpt-image-1.5）。
+	var translatedRequest duckgotypes.ApiRequest
+	if req.Model == "" || req.Model == duckgo.NativeImageModel {
+		translatedRequest = duckgotypes.NewApiRequest(duckgo.NativeImageModel)
+		translatedRequest.ReasoningEffort = "" // 实测能用的 body 里没有该键，空值靠 omitempty 省掉
+		translatedRequest.AddMessage("user", req.Prompt)
+	} else {
+		chatReq := officialtypes.APIRequest{
+			Model: req.Model,
+			Messages: []officialtypes.ApiMessage{
+				{Role: "user", Content: req.Prompt},
+			},
+			Stream: false,
+		}
+		translatedRequest = duckgoConvert.ConvertAPIRequestWithOptions(chatReq, req.ReasoningEffort, false)
+		translatedRequest.Metadata.ToolChoice.GenerateImage = true
 	}
 
 	proxyUrl := h.proxy.GetProxyIP()
@@ -463,9 +470,6 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 		}})
 		return
 	}
-
-	translatedRequest := duckgoConvert.ConvertAPIRequestWithOptions(chatReq, req.ReasoningEffort, false)
-	translatedRequest.Metadata.ToolChoice.GenerateImage = true
 
 	response, err := duckgo.POSTconversation(client, translatedRequest, token, proxyUrl)
 	if err != nil {
