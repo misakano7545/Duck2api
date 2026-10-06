@@ -2,7 +2,7 @@ package initialize
 
 import (
 	"aurora/httpclient"
-	"aurora/httpclient/bogdanfinn"
+	"aurora/httpclient/resty"
 	"aurora/internal/duckgo"
 	"bytes"
 	"encoding/json"
@@ -115,7 +115,7 @@ func (h *Handler) audioSpeech(c *gin.Context) {
 
 func (h *Handler) generateSpeechWebRTC(text string, voice string) ([]byte, error) {
 	proxyUrl := h.proxy.GetProxyIP()
-	client := bogdanfinn.NewStdClient()
+	client := resty.NewStdClient()
 	if proxyUrl != "" {
 		client.SetProxy(proxyUrl)
 	}

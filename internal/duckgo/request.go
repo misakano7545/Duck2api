@@ -26,7 +26,10 @@ import (
 var (
 	Token     *XqdgToken
 	FEVersion *XqdgToken
-	UA        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+	// 说明: 服务端会校验 UA —— 同一请求下 Linux/macOS 的 UA 会被接受, Windows 的 UA 一律
+	// 返回 418 ERR_CHALLENGE (实测 2026-10)。这个 UA 必须与 vqd.go 里 defaultVQDUserAgent
+	// 完全一致: 挑战把 navigator.userAgent 算进 client_hashes[0], 服务端会拿请求头里的 UA 复算比对。
+	UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 )
 
 type XqdgToken struct {
@@ -142,9 +145,9 @@ func createHeader() httpclient.AuroraHeaders {
 	header.Set("content-type", "application/json")
 	header.Set("origin", "https://duck.ai")
 	header.Set("referer", "https://duck.ai/")
-	header.Set("sec-ch-ua", `"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"`)
+	header.Set("sec-ch-ua", `"Google Chrome";v="145", "Chromium";v="145", "Not:A;Brand";v="24"`)
 	header.Set("sec-ch-ua-mobile", "?0")
-	header.Set("sec-ch-ua-platform", `"Windows"`)
+	header.Set("sec-ch-ua-platform", `"Linux"`)
 	header.Set("sec-fetch-dest", "empty")
 	header.Set("sec-fetch-mode", "cors")
 	header.Set("sec-fetch-site", "same-origin")

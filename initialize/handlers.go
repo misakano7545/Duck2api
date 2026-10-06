@@ -2,7 +2,7 @@ package initialize
 
 import (
 	duckgoConvert "aurora/conversion/requests/duckgo"
-	"aurora/httpclient/bogdanfinn"
+	"aurora/httpclient/resty"
 	"aurora/internal/duckgo"
 	"aurora/internal/proxys"
 	duckgotypes "aurora/typings/duckgo"
@@ -240,7 +240,7 @@ func (h *Handler) responses(c *gin.Context) {
 
 func (h *Handler) startDuckDuckGoRequest(originalRequest officialtypes.APIRequest) (duckgotypes.ApiRequest, *http.Response, error) {
 	proxyUrl := h.proxy.GetProxyIP()
-	client := bogdanfinn.NewStdClient()
+	client := resty.NewStdClient()
 	token, err := duckgo.InitXVQD(client, proxyUrl)
 	if err != nil {
 		return duckgotypes.ApiRequest{}, nil, err
@@ -434,7 +434,7 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 	}
 
 	proxyUrl := h.proxy.GetProxyIP()
-	client := bogdanfinn.NewStdClient()
+	client := resty.NewStdClient()
 	token, err := duckgo.InitXVQD(client, proxyUrl)
 	if err != nil {
 		c.JSON(500, gin.H{"error": gin.H{
@@ -605,7 +605,7 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, model string, image
 	}
 
 	proxyUrl := h.proxy.GetProxyIP()
-	client := bogdanfinn.NewStdClient()
+	client := resty.NewStdClient()
 	token, err := duckgo.InitXVQD(client, proxyUrl)
 	if err != nil {
 		c.JSON(500, gin.H{"error": gin.H{

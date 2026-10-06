@@ -1,72 +1,51 @@
+// Package resty 提供 duck.ai 需要的 HTTP 客户端。
+//
+// 注意: 这里用标准库 net/http, 不是 TLS 指纹伪装客户端。
+// 实测 (2026-10) duck.ai 的 /duckchat/v1/chat 会按 TLS/HTTP2 指纹判定:
+// 同一个 token、同一套请求头, bogdanfinn/tls-client (Okhttp4Android13 / Chrome_146 /
+// Firefox / Safari profile 全部试过) 拿到 418 ERR_BN_LIMIT, 换成 net/http 立刻 200。
+// 所以 duck.ai 相关的调用一律走这里。(包名沿用 resty 以免改动调用方, 内部已无 resty 依赖。)
 package resty
 
 import (
-	"aurora/util"
-	"crypto/tls"
-	browser "github.com/EDDYCJY/fake-useragent"
-	"github.com/go-resty/resty/v2"
+	"aurora/httpclient"
+	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
 type RestyClient struct {
-	Client *resty.Client
+	client *http.Client
 }
 
 func NewStdClient() *RestyClient {
-	client := &RestyClient{
-		Client: resty.NewWithClient(&http.Client{
-			Transport: &http.Transport{
-				// 禁用长连接
-				DisableKeepAlives: true,
-				// 配置TLS设置，跳过证书验证
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-		}),
-	}
-	client.Client.SetBaseURL("https://chat.openai.com")
-	client.Client.SetRetryCount(3)
-	client.Client.SetRetryWaitTime(5 * time.Second)
-	client.Client.SetRetryMaxWaitTime(20 * time.Second)
-
-	client.Client.SetTimeout(600 * time.Second)
-	client.Client.SetHeader("user-agent", browser.Random()).
-		SetHeader("accept", "*/*").
-		SetHeader("accept-language", "en-US,en;q=0.9").
-		SetHeader("cache-control", "no-cache").
-		SetHeader("content-type", "application/json").
-		SetHeader("oai-language", util.RandomLanguage()).
-		SetHeader("pragma", "no-cache").
-		SetHeader("sec-ch-ua", `"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"`).
-		SetHeader("sec-ch-ua-mobile", "?0").
-		SetHeader("sec-ch-ua-platform", "Windows").
-		SetHeader("sec-fetch-dest", "empty").
-		SetHeader("sec-fetch-mode", "cors").
-		SetHeader("sec-fetch-site", "same-origin")
-	return client
+	return &RestyClient{client: &http.Client{Timeout: 600 * time.Second}}
 }
 
-//func (c *RestyClient) Request(method string, url string, headers map[string]string, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
-//}
+func (c *RestyClient) SetProxy(proxyURL string) error {
+	if proxyURL == "" {
+		c.client.Transport = nil
+		return nil
+	}
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return err
+	}
+	c.client.Transport = &http.Transport{Proxy: http.ProxyURL(u)}
+	return nil
+}
 
-//func (c *RestyClient) Post(url string, headers map[string]string, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
-//}
-//
-//func (c *RestyClient) Get(url string, headers map[string]string, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
-//}
-//
-//func (c *RestyClient) Head(url string, headers map[string]string, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
-//}
-//
-//func (c *RestyClient) Options(url string, headers map[string]string, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
-//}
-//
-//func (c *RestyClient) Put(url string, headers map[string]string, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
-//}
-//
-//func (c *RestyClient) Delete(url string, headers map[string]string, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
-//}
-//
-//func (c *RestyClient) SetProxy(url string) error {}
+func (c *RestyClient) Request(method httpclient.HttpMethod, rawURL string, headers httpclient.AuroraHeaders, cookies []*http.Cookie, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(string(method), rawURL, body)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+	return c.client.Do(req)
+}

@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	defaultVQDUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+	defaultVQDUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 	defaultVQDStack     = "Error\nat l (https://duck.ai/dist/duckai-dist/entry.duckai.c0a8c794abcbc8ee2d3c.js:2:1446307)\nat async https://duck.ai/dist/duckai-dist/entry.duckai.c0a8c794abcbc8ee2d3c.js:2:1294181"
 	defaultVQDOrigin    = "https://duck.ai"
 )
@@ -332,7 +332,11 @@ const vqdBrowserPrelude = `
     if (!m) return false;
     var tag = m[1].toLowerCase(), attr = m[2], val = m[4];
     if (tag !== "*" && el.tagName && el.tagName.toLowerCase() !== tag) return false;
-    return el.getAttribute(attr) === val;
+    // 选择器进入时被整体小写化, 属性值也一并变了形, 所以这里按不区分大小写比较。
+    // (否则 meta[http-equiv="Content-Security-Policy"] 匹配不到真实元素, 挑战会提前返回
+    //  基础分 → client_hashes[1] 少 4 → 418 ERR_CHALLENGE)
+    var actual = el.getAttribute(attr);
+    return actual !== null && actual !== undefined && String(actual).toLowerCase() === String(val).toLowerCase();
   }
 
   // 内部函数: 递归收集匹配元素
@@ -350,6 +354,24 @@ const vqdBrowserPrelude = `
     // 特殊: #jsa
     if (selector === "#jsa" && this.ownerDocument && this.ownerDocument.__jsa__) {
       return new NodeList__([this.ownerDocument.__jsa__]);
+    }
+    // 特殊: * —— v4 挑战的 probe A 会设置 innerHTML 后统计后代元素数量:
+    //   div.innerHTML = '<br><div></br><br></div';
+    //   String(base + div.innerHTML.length * div.querySelectorAll('*').length)
+    // 服务端会用同样的算式复算这个值, 少算 (返回空列表 → 乘积 0) 就会 418 ERR_CHALLENGE。
+    // 这里按浏览器的解析规则数元素: 完整的开标签各算一个, 空元素 (br 等) 的闭标签
+    // 会被浏览器当成一个新元素插进来 (如 </br> → <br>), 其余闭标签与未闭合的标签不算。
+    if (selector === "*") {
+      var html = String(this.innerHTML || "");
+      var count = 0;
+      var match;
+      var openTag = /<[a-zA-Z][^>]*>/g;
+      while ((match = openTag.exec(html)) !== null) count++;
+      var voidClose = /<\/(br|hr|img|input|meta|link|area|base|col|embed|source|track|wbr)>/gi;
+      while ((match = voidClose.exec(html)) !== null) count++;
+      var descendants = [];
+      for (var i = 0; i < count; i++) descendants.push(new Element__("div"));
+      return new NodeList__(descendants);
     }
     // 特殊: meta[http-equiv="Content-Security-Policy"]
     if (selector.indexOf("meta[") === 0) {

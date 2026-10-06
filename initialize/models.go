@@ -2,7 +2,7 @@ package initialize
 
 import (
 	"aurora/httpclient"
-	"aurora/httpclient/bogdanfinn"
+	"aurora/httpclient/resty"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,7 +34,7 @@ type openAIModelsResponse struct {
 }
 
 func fetchDuckDuckGoModels(proxyURL string) (openAIModelsResponse, int, error) {
-	client := bogdanfinn.NewStdClient()
+	client := resty.NewStdClient()
 	if proxyURL != "" {
 		if err := client.SetProxy(proxyURL); err != nil {
 			return openAIModelsResponse{}, http.StatusBadGateway, fmt.Errorf("configure models proxy: %w", err)
