@@ -196,8 +196,11 @@ curl http://localhost:8080/v1/audio/speech \
 | `tinfoil/gemma4-31b` | 通用 | Gemma 4 31B |
 | `mistral-small-2603` | 通用 | Mistral Small 4（上游当前下架） |
 | `tinfoil/gpt-oss-120b` | 通用 | gpt-oss 120B（上游当前返回 400） |
+| `image-generation` | 出图 | duck.ai 原生图片模型：文生图与改图默认走它（上游列表未公开，本项目补入 `/v1/models`） |
+| `gpt-image-1.5` | 出图别名 | 等同 `image-generation`，名字取自成品图 C2PA 里的生成器名 |
+| `gpt-image-2` | 出图别名 | 走「聊天模型 + `GenerateImage` 工具」（提示词会被上游改写，本项目已包严格指令） |
 
-清单就是 `/v1/models` 的实时输出（直接透传上游 + 补入 `gpt-6-luna`）。标「需 plus/pro」的模型在匿名档会被上游拒成 `404 ERR_MODEL_RESTRICTED`，要它们得配登录态。读图/出图能力跟模型绑定（`supportsImageUpload` + `GenerateImage` 工具），不是独立接口。
+清单就是 `/v1/models` 的实时输出（直接透传上游 + 补入 `gpt-6-luna` 与三个出图模型/别名）。标「需 plus/pro」的模型在匿名档会被上游拒成 `404 ERR_MODEL_RESTRICTED`，要它们得配登录态。读图能力跟模型绑定（`supportsImageUpload`），出图则是独立的原生图片模型（详见下面的图像生成/编辑两节）。
 
 ## 高级设置
 

@@ -91,13 +91,19 @@ func parseDuckDuckGoModels(body []byte, created int64) (openAIModelsResponse, er
 		})
 	}
 
-	// gpt-6-luna 不在 DuckDuckGo 的 models 列表里, 但实测可直接对话, 补进去。
-	if !hasModelID(result.Data, hiddenModelID) {
+	// 不在上游列表、但实测可请求的模型，补进去客户端才枚举得到：
+	//   gpt-6-luna        可直接对话（上游列表里没有）
+	//   image-generation  原生图片模型，/v1/images/generations 与改图的默认
+	//   gpt-image-1.5/2   出图别名，见 duckgo.ResolveImageModel
+	for _, hidden := range hiddenModels {
+		if hasModelID(result.Data, hidden.id) {
+			continue
+		}
 		result.Data = append(result.Data, openAIModel{
-			ID:      hiddenModelID,
+			ID:      hidden.id,
 			Object:  "model",
 			Created: created,
-			OwnedBy: "openai",
+			OwnedBy: hidden.ownedBy,
 		})
 	}
 	return result, nil
@@ -105,6 +111,14 @@ func parseDuckDuckGoModels(body []byte, created int64) (openAIModelsResponse, er
 
 // hiddenModelID: DuckDuckGo 前端 bundle 里有、但 /duckchat/v1/models 不返回的可用模型。
 const hiddenModelID = "gpt-6-luna"
+
+// 上游列表里没有、但本网关实测可请求的模型。客户端靠 /v1/models 枚举，不在这里列出就点不到。
+var hiddenModels = []struct{ id, ownedBy string }{
+	{hiddenModelID, "openai"},
+	{duckgo.NativeImageModel, "duck.ai"},
+	{"gpt-image-1.5", "duck.ai"}, // 出图别名 → 原生图片模型
+	{"gpt-image-2", "duck.ai"},   // 出图别名 → 聊天模型 + GenerateImage 工具
+}
 
 func hasModelID(models []openAIModel, id string) bool {
 	for _, m := range models {
