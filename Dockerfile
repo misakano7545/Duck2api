@@ -20,7 +20,12 @@ FROM alpine:latest
 
 # 设置工作目录
 WORKDIR /app
-RUN apk add --no-cache tzdata
+# ffmpeg: internal/initialize/speech.go 的 convertAudio 调它把 WebRTC 出来的 OGG/Opus
+# 转成请求的格式(mp3/wav/flac/aac)。镜像里没有这一步就只能回落成 OGG。
+# 断言 libmp3lame —— mp3 是 TTS 的默认响应格式, 基础镜像换掉时让构建直接失败,
+# 而不是运行时静默退化(Alpine 13x MiB 装完, 主要是这一包)。
+RUN apk add --no-cache tzdata ffmpeg \
+    && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libmp3lame
 
 # 从构建阶段复制编译好的应用和资源
 COPY --from=builder /app/duck2api /app/duck2api
