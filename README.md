@@ -34,6 +34,23 @@ wget https://raw.githubusercontent.com/aurora-develop/duck2api/main/docker-compo
 docker-compose up -d
 ```
 
+### Koyeb 部署
+
+[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&builder=dockerfile&dockerfile=Dockerfile&repository=github.com/misakano7545/Duck2api&branch=main&name=duck2api&ports=8080%3Bhttp%3B%2F&env%5BPORT%5D=8080)
+
+按钮走仓库里的 `Dockerfile`（运行时已含 ffmpeg），暴露 8080。Koyeb 会自动把 `PORT` 设成最低的暴露端口（这里即 8080），按钮再显式写一个 `env[PORT]=8080` 把端口钉死 —— 两者必须一致，改端口时一起改。
+
+部署后建议在控制面板补环境变量（与上面环境变量表一致）：
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `Authorization` | 否 | API 认证 Key，形如 `Bearer your_key`；不填则接口不鉴权 |
+| `PROXY_URL` | 否 | 出口代理，形如 `http://user:pass@host:port` |
+
+免费档每月只有 5 小时额度（定价页标 "Free 5h"），常驻要付费实例；区域建议选 `sin`(新加坡) 或 `tyo`(东京)。
+
+> 出口 IP 提醒：Koyeb 走共享机房出口。若日志里上游返回 `418 ERR_BN_LIMIT`，说明该出口被 duck.ai 拒绝，换区域或用 `PROXY_URL` 挂住宅代理。
+
 ## 功能概览
 
 | 功能 | 端点 | 说明 |
