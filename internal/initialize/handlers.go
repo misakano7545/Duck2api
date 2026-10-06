@@ -566,8 +566,6 @@ func (h *Handler) imageEdits(c *gin.Context) {
 		return
 	}
 
-	model := c.Request.FormValue("model")
-
 	// Read image file
 	file, _, err := c.Request.FormFile("image")
 	if err != nil {
@@ -592,7 +590,7 @@ func (h *Handler) imageEdits(c *gin.Context) {
 	}
 
 	imageB64 := base64.StdEncoding.EncodeToString(imageBytes)
-	h.doImageEdit(c, prompt, model, imageB64, "")
+	h.doImageEdit(c, prompt, imageB64)
 }
 
 func (h *Handler) handleImageEditJSON(c *gin.Context, req officialtypes.ImageEditRequest) {
@@ -616,29 +614,57 @@ func (h *Handler) handleImageEditJSON(c *gin.Context, req officialtypes.ImageEdi
 		return
 	}
 
-	h.doImageEdit(c, req.Prompt, req.Model, req.Image, req.ReasoningEffort)
+	h.doImageEdit(c, req.Prompt, req.Image)
 }
 
-func (h *Handler) doImageEdit(c *gin.Context, prompt string, model string, imageB64 string, reasoningEffort string) {
-	// 出图模型别名归一，两处入口（JSON / multipart）都从这里过。
-	// 原生图片模型只实测过文生图，改图一律落到「聊天模型 + GenerateImage 工具」。
-	if native, real := duckgo.ResolveImageModel(model); native {
-		model = duckgo.ToolImageChatModel
-	} else {
-		model = real
+// decodeImageInput 归一改图输入：既可能是 data URL，也可能是裸 base64（multipart 那条路就是）。
+// mime 先取 data URL 里声明的，没声明就用 stdlib 嗅探字节，不猜。
+func decodeImageInput(image string) ([]byte, string, error) {
+	mimeType := ""
+	if strings.HasPrefix(image, "data:") {
+		if i := strings.Index(image, ","); i > 0 {
+			head := image[len("data:"):i] // 形如 image/png;base64
+			if j := strings.Index(head, ";"); j > 0 {
+				mimeType = head[:j]
+			}
+			image = image[i+1:]
+		}
+	}
+	blob, err := base64.StdEncoding.DecodeString(strings.TrimSpace(image))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(blob) == 0 {
+		return nil, "", errors.New("empty image")
+	}
+	if mimeType == "" {
+		mimeType = http.DetectContentType(blob)
+	}
+	return blob, mimeType, nil
+}
+
+func (h *Handler) doImageEdit(c *gin.Context, prompt string, imageB64 string) {
+	// 改图固定走原生图片模型：实测「聊天模型 + GenerateImage + 图」上游回 400 ERR_BAD_REQUEST，
+	// 而原生模型单请求就能吃图——先回 role=image-validated（服务端验图发 moderationToken），
+	// 再回 partial-image / generated-image。所以请求里的 model 在改图上不参与选路。
+	blob, mimeType, err := decodeImageInput(imageB64)
+	if err != nil {
+		c.JSON(400, gin.H{"error": gin.H{
+			"message": "image is not valid base64: " + err.Error(),
+			"type":    "invalid_request_error",
+			"param":   "image",
+			"code":    "invalid_image",
+		}})
+		return
 	}
 
-	// Build the prompt with image context
-	// 同样包严格指令：改图的指令也是用户原话，不该被聊天模型改写成风格描述。
-	editPrompt := duckgo.StrictImagePrompt(prompt)
-
-	chatReq := officialtypes.APIRequest{
-		Model: model,
-		Messages: []officialtypes.ApiMessage{
-			{Role: "user", Content: editPrompt},
-		},
-		Stream: false,
-	}
+	// 严格指令：改图指令也是用户原话，不该被聊天模型改写成风格描述。
+	nativeReq := duckgotypes.NewApiRequest(duckgo.NativeImageModel)
+	nativeReq.ReasoningEffort = ""
+	nativeReq.AddMessageWithParts("user", []duckgotypes.ContentPart{
+		{Type: "image", MimeType: mimeType, Image: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(blob)},
+		{Type: "text", Text: duckgo.StrictImagePrompt(prompt)},
+	})
 
 	proxyUrl := h.proxy.GetProxyIP()
 	client := resty.NewStdClient()
@@ -652,10 +678,7 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, model string, image
 		return
 	}
 
-	translatedRequest := duckgoConvert.ConvertAPIRequestWithOptions(chatReq, reasoningEffort, false)
-	translatedRequest.Metadata.ToolChoice.GenerateImage = true
-
-	response, err := duckgo.POSTconversation(client, translatedRequest, token, proxyUrl)
+	response, err := duckgo.POSTconversation(client, nativeReq, token, proxyUrl)
 	if err != nil {
 		c.JSON(500, gin.H{"error": gin.H{
 			"message": "Failed to edit image",

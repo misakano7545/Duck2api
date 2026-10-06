@@ -138,6 +138,8 @@ curl http://localhost:8080/v1/images/edits \
   -F "prompt=把猫改成蓝色"
 ```
 
+输入图会真的传给上游（`data:` URL 或裸 base64 都收）。`image` 走固定路径：**原生图片模型**（`image-generation`）+ 图片 part，单请求完成——上游先回 `role:"image-validated"` 验图，再回成品；`model` 字段在改图上不参与选路（「聊天模型 + `GenerateImage` + 图」上游直接回 400 `ERR_BAD_REQUEST`，这条路走不通）。改图指令同样包严格指令，一次返回 1 张成品。
+
 ### 文件上传与问答
 
 ```bash
