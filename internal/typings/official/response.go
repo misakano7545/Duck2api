@@ -243,7 +243,7 @@ func NewResponseAPIFull(text, model string, inputTokens, outputTokens, cachedTok
 	return ResponseAPI{
 		ID:        "resp_QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:    "response",
-		CreatedAt: 0,
+		CreatedAt: time.Now().Unix(),
 		Status:    "completed",
 		Model:     model,
 		Output: []ResponseOutput{

@@ -41,4 +41,6 @@ func TestCreatedIsRealTimestamp(t *testing.T) {
 	check("chat 流式分片", NewChatCompletionChunkWithModel("x", "m").Created)
 	check("chat 流式收尾分片", StopChunkWithModel("stop", "m").Created)
 	check("chat 工具调用", NewChatCompletionToolCalls("m", nil, 1, 1, 0, 0).Created)
+	check("responses 非流式", NewResponseAPIFull("x", "m", 1, 1, 0, 0, 0, "").CreatedAt)
+	check("responses 简版", NewResponseAPIWithModel("x", "m").CreatedAt)
 }
