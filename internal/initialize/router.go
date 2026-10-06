@@ -47,6 +47,10 @@ func registerRoutes(group *gin.RouterGroup, handler *Handler) {
 	// Anthropic Messages API (Claude Code native protocol)
 	group.OPTIONS("/v1/messages", optionsHandler)
 	group.POST("/v1/messages", middlewares.Authorization, handler.messagesHandler)
+	// 不带 /v1 的别名：有些 Anthropic 客户端把 base_url 配成 …/v1 后会打 …/v1/messages，
+	// 也有配成裸域名直接打 /messages 的，两条都收（同一个 handler）。
+	group.OPTIONS("/messages", optionsHandler)
+	group.POST("/messages", middlewares.Authorization, handler.messagesHandler)
 
 	// Responses API
 	group.OPTIONS("/v1/responses", optionsHandler)

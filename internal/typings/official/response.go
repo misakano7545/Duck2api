@@ -359,6 +359,9 @@ func NewChatCompletionFull(text, model string, promptTokens, completionTokens, c
 					Role:    "assistant",
 				},
 				Index: 0,
+				// 非流式也必须给 finish_reason：OpenAI 客户端按它判断收尾，
+				// 留 null 会让"正常答完"和"半截断"看起来一样。
+				FinishReason: "stop",
 			},
 		},
 	}
