@@ -33,6 +33,16 @@ func ResolveImageModel(model string) (native bool, real string) {
 	return false, model
 }
 
+// StrictImagePrompt 把用户提示词包成"原样使用"的指令，交给工具路径的聊天模型。
+//
+// 工具路径多一跳：聊天模型会把用户原文扩写成它自己的 imageGenPrompt 再送进图像服务
+// （实测 10 字 → 80 字，塞满风格词）。包上这段指令后实测 imageGenPrompt 与原文逐字一致。
+// ponytail: 只约束"不要改写"，不加任何风格引导词——用户写什么就是什么。
+func StrictImagePrompt(prompt string) string {
+	return "严格遵守：下面的文字就是最终画面描述，必须原样逐字用作 imageGenPrompt 参数值，" +
+		"禁止改写、扩写、缩短、润色、翻译或添加任何风格词。\n描述：" + prompt
+}
+
 // ImageResult holds the extracted image data from the SSE stream
 type ImageResult struct {
 	Text   string

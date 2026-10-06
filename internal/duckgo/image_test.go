@@ -34,6 +34,24 @@ func TestResolveImageModel(t *testing.T) {
 	}
 }
 
+// 严格指令必须把用户原文整段带上，且只此一段（不能截断、不能加风格词）。
+func TestStrictImagePrompt(t *testing.T) {
+	p := "一只柯基在沙滩上奔跑"
+	got := StrictImagePrompt(p)
+	if !strings.Contains(got, p) {
+		t.Fatalf("严格指令丢了原文: %q", got)
+	}
+	if !strings.HasSuffix(got, p) {
+		t.Errorf("原文应紧跟在描述标记之后，实际结尾: %q", got[len(got)-20:])
+	}
+	if strings.Count(got, p) != 1 {
+		t.Errorf("原文出现 %d 次，应恰好 1 次", strings.Count(got, p))
+	}
+	if StrictImagePrompt("") == "" {
+		t.Error("空提示词也要给出指令骨架，而不是空串")
+	}
+}
+
 // 废稿（partial）不能当输出图返回：只有成品算图，废稿仅在拿不到成品时兜底。
 func TestReadImageResponseSkipsDrafts(t *testing.T) {
 	cases := []struct {

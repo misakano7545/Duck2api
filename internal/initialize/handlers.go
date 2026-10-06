@@ -453,7 +453,7 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 		chatReq := officialtypes.APIRequest{
 			Model: imageModel,
 			Messages: []officialtypes.ApiMessage{
-				{Role: "user", Content: req.Prompt},
+				{Role: "user", Content: duckgo.StrictImagePrompt(req.Prompt)},
 			},
 			Stream: false,
 		}
@@ -629,7 +629,8 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, model string, image
 	}
 
 	// Build the prompt with image context
-	editPrompt := prompt
+	// 同样包严格指令：改图的指令也是用户原话，不该被聊天模型改写成风格描述。
+	editPrompt := duckgo.StrictImagePrompt(prompt)
 
 	chatReq := officialtypes.APIRequest{
 		Model: model,
