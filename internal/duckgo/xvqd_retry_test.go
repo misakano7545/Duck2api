@@ -1,7 +1,7 @@
 package duckgo
 
 import (
-	"aurora/httpclient"
+	"aurora/internal/httpclient"
 	"errors"
 	"io"
 	"net/http"

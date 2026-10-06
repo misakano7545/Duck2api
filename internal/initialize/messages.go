@@ -2,8 +2,8 @@ package initialize
 
 import (
 	"aurora/internal/duckgo"
-	anthropic "aurora/typings/anthropic"
-	"aurora/util"
+	anthropic "aurora/internal/typings/anthropic"
+	"aurora/internal/util"
 	"bufio"
 	"encoding/json"
 	"fmt"

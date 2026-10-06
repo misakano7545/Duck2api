@@ -13,7 +13,7 @@ RUN go mod download
 
 # 复制源代码并构建应用
 COPY . .
-RUN go build -ldflags "-s -w" -o /app/duck2api .
+RUN go build -ldflags "-s -w" -o /app/duck2api ./cmd/duck2api
 
 # 使用 Alpine Linux 作为最终镜像
 FROM alpine:latest

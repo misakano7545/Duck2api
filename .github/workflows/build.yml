@@ -50,7 +50,7 @@ jobs:
           if [ "${GOOS}" = "windows" ]; then
             output="duck2api.exe"
           fi
-          go build -trimpath -ldflags="-s -w" -o "${artifact}/${output}" .
+          go build -trimpath -ldflags="-s -w" -o "${artifact}/${output}" ./cmd/duck2api
           tar -czf "${artifact}.tar.gz" "${artifact}"
 
       - name: Upload artifact

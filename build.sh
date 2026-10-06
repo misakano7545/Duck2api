@@ -28,7 +28,7 @@ for target in "${targets[@]}"; do
     outputFile="${outputDir}/${PKG}"
     archiveName="${PKG}-${GOOS}-${GOARCH}.tar.gz"
     mkdir -p $(dirname ${outputFile})
-    GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -extldflags '-static'" -o ${outputFile} *.go
+    GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -extldflags '-static'" -o ${outputFile} ./cmd/duck2api
     if [ -n "$upxPath" ]; then
         $upxPath -9 ${outputFile}
     fi

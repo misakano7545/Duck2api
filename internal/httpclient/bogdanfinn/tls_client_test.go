@@ -1,7 +1,7 @@
 package bogdanfinn
 
 import (
-	"aurora/httpclient"
+	"aurora/internal/httpclient"
 	"fmt"
 	"io"
 	"net/http"

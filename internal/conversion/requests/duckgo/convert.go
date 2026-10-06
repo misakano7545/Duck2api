@@ -1,8 +1,8 @@
 package duckgo
 
 import (
-	duckgotypes "aurora/typings/duckgo"
-	officialtypes "aurora/typings/official"
+	duckgotypes "aurora/internal/typings/duckgo"
+	officialtypes "aurora/internal/typings/official"
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"

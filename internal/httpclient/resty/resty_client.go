@@ -8,7 +8,7 @@
 package resty
 
 import (
-	"aurora/httpclient"
+	"aurora/internal/httpclient"
 	"io"
 	"net/http"
 	"net/url"

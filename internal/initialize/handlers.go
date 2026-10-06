@@ -1,13 +1,13 @@
 package initialize
 
 import (
-	duckgoConvert "aurora/conversion/requests/duckgo"
-	"aurora/httpclient/resty"
+	duckgoConvert "aurora/internal/conversion/requests/duckgo"
 	"aurora/internal/duckgo"
+	"aurora/internal/httpclient/resty"
 	"aurora/internal/proxys"
-	duckgotypes "aurora/typings/duckgo"
-	officialtypes "aurora/typings/official"
-	"aurora/util"
+	duckgotypes "aurora/internal/typings/duckgo"
+	officialtypes "aurora/internal/typings/official"
+	"aurora/internal/util"
 	"bufio"
 	"encoding/base64"
 	"encoding/json"

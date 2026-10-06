@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	officialtypes "aurora/typings/official"
+	officialtypes "aurora/internal/typings/official"
 
 	"github.com/pkoukk/tiktoken-go"
 )

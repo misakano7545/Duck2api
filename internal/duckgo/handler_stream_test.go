@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	duckgotypes "aurora/typings/duckgo"
+	duckgotypes "aurora/internal/typings/duckgo"
 	"github.com/gin-gonic/gin"
 )
 

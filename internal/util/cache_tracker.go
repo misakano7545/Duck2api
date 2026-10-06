@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	anthropic "aurora/typings/anthropic"
+	anthropic "aurora/internal/typings/anthropic"
 )
 
 type cacheBlock struct {

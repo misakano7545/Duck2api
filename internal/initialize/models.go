@@ -1,8 +1,8 @@
 package initialize
 
 import (
-	"aurora/httpclient"
-	"aurora/httpclient/resty"
+	"aurora/internal/httpclient"
+	"aurora/internal/httpclient/resty"
 	"encoding/json"
 	"fmt"
 	"io"

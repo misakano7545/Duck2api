@@ -1,11 +1,11 @@
 package initialize
 
 import (
-	"aurora/httpclient"
-	"aurora/httpclient/resty"
 	"aurora/internal/duckgo"
-	officialtypes "aurora/typings/official"
-	"aurora/util"
+	"aurora/internal/httpclient"
+	"aurora/internal/httpclient/resty"
+	officialtypes "aurora/internal/typings/official"
+	"aurora/internal/util"
 	"bytes"
 	"encoding/json"
 	"fmt"

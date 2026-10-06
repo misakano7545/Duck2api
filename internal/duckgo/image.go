@@ -1,7 +1,7 @@
 package duckgo
 
 import (
-	duckgotypes "aurora/typings/duckgo"
+	duckgotypes "aurora/internal/typings/duckgo"
 	"bufio"
 	"encoding/json"
 	"io"

@@ -1,7 +1,7 @@
 package api
 
 import (
-	"aurora/initialize"
+	"aurora/internal/initialize"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )

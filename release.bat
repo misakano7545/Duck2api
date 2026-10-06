@@ -8,7 +8,7 @@ REM 设置要生成的可执行文件的名称
 set OUTPUT_NAME=aurora
 
 REM 设置 Go 源文件的名称
-SET GOFILE=aurora
+SET GOFILE=./cmd/duck2api
 
 REM 设置输出目录
 SET OUTPUTDIR=target

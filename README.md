@@ -12,7 +12,7 @@ curl 示例请查看：[API.md](API.md)
 ```bash
 git clone https://github.com/aurora-develop/duck2api
 cd duck2api
-go build -o duck2api
+go build -o duck2api ./cmd/duck2api
 chmod +x ./duck2api
 ./duck2api
 ```

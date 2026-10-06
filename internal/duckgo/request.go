@@ -1,10 +1,10 @@
 package duckgo
 
 import (
-	"aurora/httpclient"
-	duckgotypes "aurora/typings/duckgo"
-	officialtypes "aurora/typings/official"
-	"aurora/util"
+	"aurora/internal/httpclient"
+	duckgotypes "aurora/internal/typings/duckgo"
+	officialtypes "aurora/internal/typings/official"
+	"aurora/internal/util"
 	"bufio"
 	"bytes"
 	"crypto/rand"

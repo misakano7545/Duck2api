@@ -1,7 +1,7 @@
 package main
 
 import (
-	"aurora/initialize"
+	"aurora/internal/initialize"
 	"os"
 
 	"github.com/gin-gonic/gin"

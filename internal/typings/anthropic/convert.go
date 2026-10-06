@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	officialtypes "aurora/typings/official"
+	officialtypes "aurora/internal/typings/official"
 )
 
 // ThinkingToEffort maps an Anthropic thinking config to a reasoning_effort level.

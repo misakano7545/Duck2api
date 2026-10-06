@@ -1,7 +1,7 @@
 package initialize
 
 import (
-	"aurora/middlewares"
+	"aurora/internal/middlewares"
 	"os"
 
 	"github.com/gin-gonic/gin"
