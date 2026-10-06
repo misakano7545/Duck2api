@@ -422,7 +422,7 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 	// Build a chat request with image generation enabled
 	model := req.Model
 	if model == "" {
-		model = "gpt-5.4-nano"
+		model = "gpt-5.6-luna"
 	}
 
 	chatReq := officialtypes.APIRequest{
@@ -533,7 +533,7 @@ func (h *Handler) imageEdits(c *gin.Context) {
 
 	model := c.Request.FormValue("model")
 	if model == "" {
-		model = "gpt-5.4-nano"
+		model = "gpt-5.6-luna"
 	}
 
 	// Read image file
@@ -586,7 +586,7 @@ func (h *Handler) handleImageEditJSON(c *gin.Context, req officialtypes.ImageEdi
 
 	model := req.Model
 	if model == "" {
-		model = "gpt-5.4-nano"
+		model = "gpt-5.6-luna"
 	}
 
 	h.doImageEdit(c, req.Prompt, model, req.Image, req.ReasoningEffort)

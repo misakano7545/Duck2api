@@ -39,7 +39,7 @@ func (r ResponseAPIRequest) ToChatCompletionRequest() APIRequest {
 	}
 
 	if strings.TrimSpace(request.Model) == "" {
-		request.Model = "gpt-5-mini"
+		request.Model = "gpt-5.6-luna"
 	}
 	if strings.TrimSpace(r.Instructions) != "" {
 		request.Messages = append(request.Messages, ApiMessage{

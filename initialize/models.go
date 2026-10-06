@@ -76,7 +76,7 @@ func parseDuckDuckGoModels(body []byte, created int64) (openAIModelsResponse, er
 
 	result := openAIModelsResponse{
 		Object: "list",
-		Data:   make([]openAIModel, 0, len(upstream.Models)),
+		Data:   make([]openAIModel, 0, len(upstream.Models)+1),
 	}
 	for _, model := range upstream.Models {
 		if model.ID == "" {
@@ -89,5 +89,27 @@ func parseDuckDuckGoModels(body []byte, created int64) (openAIModelsResponse, er
 			OwnedBy: model.Provider,
 		})
 	}
+
+	// gpt-6-luna 不在 DuckDuckGo 的 models 列表里, 但实测可直接对话, 补进去。
+	if !hasModelID(result.Data, hiddenModelID) {
+		result.Data = append(result.Data, openAIModel{
+			ID:      hiddenModelID,
+			Object:  "model",
+			Created: created,
+			OwnedBy: "openai",
+		})
+	}
 	return result, nil
+}
+
+// hiddenModelID: DuckDuckGo 前端 bundle 里有、但 /duckchat/v1/models 不返回的可用模型。
+const hiddenModelID = "gpt-6-luna"
+
+func hasModelID(models []openAIModel, id string) bool {
+	for _, m := range models {
+		if m.ID == id {
+			return true
+		}
+	}
+	return false
 }

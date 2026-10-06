@@ -260,7 +260,7 @@ func (h *Handler) callDictation(audioBytes []byte, contentType string) (string, 
 		header.Set("accept", "application/json")
 		header.Set("origin", "https://duck.ai")
 		header.Set("referer", "https://duck.ai/")
-		header.Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
+		header.Set("user-agent", duckgo.UA)
 		header.Set("x-vqd-hash-1", token)
 		header.Set("x-ddg-journey-id", duckgo.RandomHex(16))
 		header.Set("x-fe-signals", duckgo.CreateFESignals())
@@ -312,6 +312,12 @@ func (h *Handler) callDictation(audioBytes []byte, contentType string) (string, 
 					return s, nil
 				}
 			}
+		}
+
+		// 上游 {"action":"success","text":""} = 这段音频没识别到语音, 返回空串,
+		// 不要把整个 JSON 当转写文本吐出去。
+		if act, _ := result["action"].(string); act == "success" {
+			return "", nil
 		}
 
 		return string(body), nil
