@@ -13,11 +13,11 @@ type ImagePartData struct {
 }
 
 type ImagePart struct {
-	Type   string        `json:"type"`
-	Result string        `json:"result,omitempty"`
-	Format string        `json:"format,omitempty"`
-	Width  int           `json:"width,omitempty"`
-	Height int           `json:"height,omitempty"`
+	Type   string         `json:"type"`
+	Result string         `json:"result,omitempty"`
+	Format string         `json:"format,omitempty"`
+	Width  int            `json:"width,omitempty"`
+	Height int            `json:"height,omitempty"`
 	Data   *ImagePartData `json:"data,omitempty"`
 }
 

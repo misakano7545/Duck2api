@@ -29,21 +29,21 @@ func newMockWriter() *mockWriter {
 	return &mockWriter{Buffer: &bytes.Buffer{}, header: http.Header{}}
 }
 
-func (m *mockWriter) Header() http.Header   { return m.header }
-func (m *mockWriter) WriteHeader(code int)   { m.status = code }
-func (m *mockWriter) WriteHeaderNow()        {}
-func (m *mockWriter) Status() int            { return m.status }
-func (m *mockWriter) Size() int              { return m.Buffer.Len() }
-func (m *mockWriter) Written() bool          { return m.Buffer.Len() > 0 }
+func (m *mockWriter) Header() http.Header  { return m.header }
+func (m *mockWriter) WriteHeader(code int) { m.status = code }
+func (m *mockWriter) WriteHeaderNow()      {}
+func (m *mockWriter) Status() int          { return m.status }
+func (m *mockWriter) Size() int            { return m.Buffer.Len() }
+func (m *mockWriter) Written() bool        { return m.Buffer.Len() > 0 }
 func (m *mockWriter) Write(data []byte) (int, error) {
 	return m.Buffer.Write(data)
 }
 func (m *mockWriter) WriteString(s string) (int, error) {
 	return m.Buffer.WriteString(s)
 }
-func (m *mockWriter) Flush()                 {}
-func (m *mockWriter) Hijack()                {}
-func (m *mockWriter) Pusher() http.Pusher    { return nil }
+func (m *mockWriter) Flush()              {}
+func (m *mockWriter) Hijack()             {}
+func (m *mockWriter) Pusher() http.Pusher { return nil }
 func (m *mockWriter) CloseNotify() <-chan bool {
 	return nil
 }

@@ -37,15 +37,15 @@ type Message struct {
 
 // ContentBlock is one block inside a message's content array.
 type ContentBlock struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	Source    *ImageSource    `json:"source,omitempty"`
-	ID        string          `json:"id,omitempty"`          // tool_use
-	Name      string          `json:"name,omitempty"`        // tool_use
-	Input     json.RawMessage `json:"input,omitempty"`       // tool_use
-	ToolUseID string          `json:"tool_use_id,omitempty"` // tool_result
-	Content   json.RawMessage `json:"content,omitempty"`     // tool_result
-	IsError   bool            `json:"is_error,omitempty"`
+	Type         string          `json:"type"`
+	Text         string          `json:"text,omitempty"`
+	Source       *ImageSource    `json:"source,omitempty"`
+	ID           string          `json:"id,omitempty"`          // tool_use
+	Name         string          `json:"name,omitempty"`        // tool_use
+	Input        json.RawMessage `json:"input,omitempty"`       // tool_use
+	ToolUseID    string          `json:"tool_use_id,omitempty"` // tool_result
+	Content      json.RawMessage `json:"content,omitempty"`     // tool_result
+	IsError      bool            `json:"is_error,omitempty"`
 	Thinking     string          `json:"thinking,omitempty"` // thinking block
 	Signature    string          `json:"signature,omitempty"`
 	CacheControl json.RawMessage `json:"cache_control,omitempty"`
@@ -69,14 +69,14 @@ type Tool struct {
 
 // MessagesResponse is the Anthropic Messages API non-stream response.
 type MessagesResponse struct {
-	ID           string          `json:"id"`
-	Type         string          `json:"type"` // "message"
-	Role         string          `json:"role"` // "assistant"
-	Model        string          `json:"model"`
-	Content      []ContentBlock  `json:"content"`
-	StopReason   string          `json:"stop_reason"`
-	StopSequence *string         `json:"stop_sequence"`
-	Usage        AnthropicUsage  `json:"usage"`
+	ID           string         `json:"id"`
+	Type         string         `json:"type"` // "message"
+	Role         string         `json:"role"` // "assistant"
+	Model        string         `json:"model"`
+	Content      []ContentBlock `json:"content"`
+	StopReason   string         `json:"stop_reason"`
+	StopSequence *string        `json:"stop_sequence"`
+	Usage        AnthropicUsage `json:"usage"`
 }
 
 // AnthropicUsage is the usage object in Anthropic responses.
@@ -91,7 +91,7 @@ type AnthropicUsage struct {
 
 // MessageStartEvent is the first SSE event (message_start).
 type MessageStartEvent struct {
-	Type    string               `json:"type"`
+	Type    string                `json:"type"`
 	Message AnthropicStartMessage `json:"message"`
 }
 
@@ -116,8 +116,8 @@ type ContentBlockStartEvent struct {
 
 // ContentBlockDeltaEvent carries an incremental delta for a content block.
 type ContentBlockDeltaEvent struct {
-	Type  string      `json:"type"`
-	Index int         `json:"index"`
+	Type  string       `json:"type"`
+	Index int          `json:"index"`
 	Delta ContentDelta `json:"delta"`
 }
 
@@ -139,8 +139,8 @@ type ContentBlockStopEvent struct {
 
 // MessageDeltaEvent carries the stop reason and output usage.
 type MessageDeltaEvent struct {
-	Type  string       `json:"type"`
-	Delta MessageDelta `json:"delta"`
+	Type  string         `json:"type"`
+	Delta MessageDelta   `json:"delta"`
 	Usage AnthropicUsage `json:"usage"`
 }
 

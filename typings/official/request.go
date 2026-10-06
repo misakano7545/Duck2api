@@ -7,9 +7,9 @@ import (
 
 type APIRequest struct {
 	Messages  []ApiMessage `json:"messages"`
-	Stream    bool          `json:"stream"`
-	Model     string        `json:"model"`
-	PluginIDs []string      `json:"plugin_ids"`
+	Stream    bool         `json:"stream"`
+	Model     string       `json:"model"`
+	PluginIDs []string     `json:"plugin_ids"`
 	// Extra fields for Duck.ai features (not standard OpenAI)
 	ReasoningEffort string `json:"reasoning_effort,omitempty"` // "none", "low", "medium", "high"
 	WebSearch       *bool  `json:"web_search,omitempty"`       // enable web search

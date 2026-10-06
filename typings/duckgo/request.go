@@ -34,10 +34,10 @@ type ToolChoice struct {
 // ContentPart represents a single part in a multipart message
 type ContentPart struct {
 	Type     string `json:"type"`               // "text", "image", "file"
-	Text     string `json:"text,omitempty"`      // for type=text
-	Image    string `json:"image,omitempty"`     // for type=image (data URL)
-	MimeType string `json:"mimeType,omitempty"`  // for type=image or type=file
-	Filename string `json:"filename,omitempty"`  // for type=file
+	Text     string `json:"text,omitempty"`     // for type=text
+	Image    string `json:"image,omitempty"`    // for type=image (data URL)
+	MimeType string `json:"mimeType,omitempty"` // for type=image or type=file
+	Filename string `json:"filename,omitempty"` // for type=file
 }
 
 // MessageContent can be either a plain string or an array of ContentParts

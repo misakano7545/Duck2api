@@ -60,8 +60,8 @@ func (w *oggWriter) writePage(headerType byte, granulePos uint64, data []byte) {
 	pageSize := 27 + segCount + len(data)
 	page := make([]byte, 27, pageSize)
 	copy(page[0:4], "OggS") // capture pattern
-	page[4] = 0              // version
-	page[5] = headerType     // header type
+	page[4] = 0             // version
+	page[5] = headerType    // header type
 	binary.LittleEndian.PutUint64(page[6:14], granulePos)
 	binary.LittleEndian.PutUint32(page[14:18], w.serial)
 	binary.LittleEndian.PutUint32(page[18:22], w.pageCounter)
