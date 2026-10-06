@@ -204,7 +204,7 @@ curl http://localhost:8080/v1/audio/speech \
 }
 ```
 
-优先级：**真实环境变量 > `.env` > `config.json`**。文件里没写的键不影响环境变量；同一项两处都有时环境变量赢 —— 所以敏感项适合放部署面板的环境变量，非敏感项放文件。
+优先级：**真实环境变量 > `config.json`**。同一项两处都有时环境变量赢 —— 敏感项适合放部署面板的环境变量，非敏感项放文件。
 
 `config.json` 已在 `.gitignore` 里（不会被提交），提交的是 `config.example.json`。
 

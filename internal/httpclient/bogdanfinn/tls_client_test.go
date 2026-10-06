@@ -8,14 +8,11 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/joho/godotenv"
 )
 
 var BaseURL string
 
 func init() {
-	_ = godotenv.Load(".env")
 	BaseURL = os.Getenv("BASE_URL")
 	if BaseURL == "" {
 		BaseURL = "https://chat.openai.com/backend-anon"
