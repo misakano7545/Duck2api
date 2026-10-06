@@ -228,7 +228,7 @@ func (h *Handler) audioTranscriptions(c *gin.Context) {
 	// Call Duck.ai dictation endpoint
 	text, err := h.callDictation(audioBytes, contentType)
 	if err != nil {
-		c.JSON(500, gin.H{"error": gin.H{
+		c.JSON(upstreamStatus(c, err), gin.H{"error": gin.H{
 			"message": "Transcription failed",
 			"type":    "internal_server_error",
 			"code":    err.Error(),
@@ -379,7 +379,7 @@ func (h *Handler) chatWithFiles(c *gin.Context) {
 
 	translated_request, response, err := h.startDuckDuckGoRequest(req.APIRequest)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		c.JSON(upstreamStatus(c, err), gin.H{"error": err.Error()})
 		return
 	}
 	defer response.Body.Close()

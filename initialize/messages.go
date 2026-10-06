@@ -64,7 +64,7 @@ func (h *Handler) messagesHandler(c *gin.Context) {
 
 	translated, response, err := h.startDuckDuckGoRequest(apiReq)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		c.JSON(upstreamStatus(c, err), gin.H{"error": err.Error()})
 		return
 	}
 	defer response.Body.Close()

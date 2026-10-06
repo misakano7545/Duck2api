@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -36,6 +37,17 @@ func NewHandle(proxy *proxys.IProxy) *Handler {
 		return f.Filename, f.MimeType, f.Bytes, true
 	}
 	return &Handler{proxy: proxy}
+}
+
+// upstreamStatus 把「取挑战失败」当作上游限速返回 429 + Retry-After, 其它错误仍是 500。
+// 所有会走到 duckgo.InitXVQD 的失败点都该用它代替写死的 500, 免得把限速当故障报给调用方。
+// ponytail: 只改状态码与 Retry-After, 各站点原有响应体形状不动。
+func upstreamStatus(c *gin.Context, err error) int {
+	if errors.Is(err, duckgo.ErrChallengeUnavailable) {
+		c.Header("Retry-After", "60")
+		return http.StatusTooManyRequests
+	}
+	return http.StatusInternalServerError
 }
 
 func optionsHandler(c *gin.Context) {
@@ -76,7 +88,7 @@ func (h *Handler) duckduckgo(c *gin.Context) {
 
 	translated_request, response, err := h.startDuckDuckGoRequest(original_request)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		c.JSON(upstreamStatus(c, err), gin.H{"error": err.Error()})
 		return
 	}
 	defer response.Body.Close()
@@ -191,7 +203,7 @@ func (h *Handler) responses(c *gin.Context) {
 
 	translatedRequest, response, err := h.startDuckDuckGoRequest(chatRequest)
 	if err != nil {
-		c.JSON(500, gin.H{
+		c.JSON(upstreamStatus(c, err), gin.H{
 			"error": err.Error(),
 		})
 		return
@@ -437,7 +449,7 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 	client := resty.NewStdClient()
 	token, err := duckgo.InitXVQD(client, proxyUrl)
 	if err != nil {
-		c.JSON(500, gin.H{"error": gin.H{
+		c.JSON(upstreamStatus(c, err), gin.H{"error": gin.H{
 			"message": "Failed to initialize VQD token",
 			"type":    "internal_server_error",
 			"code":    err.Error(),
@@ -608,7 +620,7 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, model string, image
 	client := resty.NewStdClient()
 	token, err := duckgo.InitXVQD(client, proxyUrl)
 	if err != nil {
-		c.JSON(500, gin.H{"error": gin.H{
+		c.JSON(upstreamStatus(c, err), gin.H{"error": gin.H{
 			"message": "Failed to initialize VQD token",
 			"type":    "internal_server_error",
 			"code":    err.Error(),

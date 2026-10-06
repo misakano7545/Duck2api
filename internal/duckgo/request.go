@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -38,6 +39,17 @@ type XqdgToken struct {
 	ExpireAt time.Time  `json:"expire"`
 }
 
+// ErrChallengeUnavailable: 上游没下发 x-vqd-hash-1 挑战头。
+// duck.ai 按客户端指纹限速(实测连发约 5 次后触发, 冷却 30-60s 自动恢复), 期间
+// /status 返回 200 但没有挑战头——这是限速不是服务故障, 调用方应按 429 处理。
+var ErrChallengeUnavailable = errors.New("upstream did not issue an x-vqd-hash-1 challenge")
+
+// chalRetryDelays 取挑战失败的退避间隔, 累计约 31s。
+// 实测冷却 30s 即可恢复, 更长的窗口由调用方按 429 + Retry-After 重试兜底。
+var chalRetryDelays = []time.Duration{
+	1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second,
+}
+
 func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string) (string, error) {
 	if Token == nil {
 		Token = &XqdgToken{
@@ -46,22 +58,37 @@ func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string) (string, erro
 		}
 	}
 	Token.M.Lock()
+	// ponytail: 退避期间持锁, 并发调用会排队等同一个挑战(单账号代理场景足够);
+	// 要并行就得改成 singleflight + 各自退避, 现在不做。
 	defer Token.M.Unlock()
 	if Token.Token == "" {
-		status, err := postStatus(client, proxyUrl)
-		if err != nil {
-			return "", err
+		lastErr := error(ErrChallengeUnavailable)
+		for attempt := 0; ; attempt++ {
+			status, err := postStatus(client, proxyUrl)
+			if err != nil {
+				lastErr = err // 网络/代理抖动, 同样退避重试
+			} else {
+				vqdHash := status.Header.Get("x-vqd-hash-1")
+				status.Body.Close()
+				if vqdHash != "" {
+					// 拿到挑战就算成功一半: 解算失败属于另一类问题(GenerateVQDHash
+					// 内部已有 fallback), 不再按限速重试。
+					token, tokenErr := GenerateVQDHash(vqdHash)
+					if tokenErr != nil {
+						return "", tokenErr
+					}
+					Token.Token = token
+					return Token.Token, nil
+				}
+				lastErr = ErrChallengeUnavailable
+			}
+			if attempt >= len(chalRetryDelays) {
+				break
+			}
+			log.Printf("[VQD] %v, retrying in %s (attempt %d/%d)", lastErr, chalRetryDelays[attempt], attempt+1, len(chalRetryDelays))
+			time.Sleep(chalRetryDelays[attempt])
 		}
-		defer status.Body.Close()
-		vqdHash := status.Header.Get("x-vqd-hash-1")
-		if vqdHash == "" {
-			return "", errors.New("no x-vqd-hash-1 token")
-		}
-		token, err := GenerateVQDHash(vqdHash)
-		if err != nil {
-			return "", err
-		}
-		Token.Token = token
+		return "", lastErr
 	}
 
 	return Token.Token, nil

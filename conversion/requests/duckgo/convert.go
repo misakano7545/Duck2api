@@ -22,8 +22,13 @@ import (
 
 func capReasoningEffort(model string, effort string) string {
 	effort = strings.ToLower(strings.TrimSpace(effort))
-	// DuckDuckGo only supports two reasoning states: "none" (fast) and "low" (reasoning mode).
-	// Any explicit effort level entered by the user enables reasoning mode.
+	// DuckDuckGo 只认 "none"(快速) 和 "low"(思考模式) 两档 —— 2026-10 实测:
+	// 透传 medium 会被上游拒成 400 ERR_BAD_REQUEST (models 元数据里 terra/sol/opus/5.4-mini
+	// 声明支持 medium, 但 reasoningEffortAccess.entityHasAccess=false, 属未开通),
+	// high/max 更不在上游词表里(词表只有 none/low/medium)。所以非空一律压到 low,
+	// 不要把用户输入的档位原样透传 —— 那会把请求打成 400。
+	// model 参数留着是为了将来按模型白名单放开(放开前先用 /v1/models 的
+	// supportedReasoningEffort + reasoningEffortAccess 确认该档位确实可用)。
 	switch effort {
 	case "", "none":
 		return "none"
