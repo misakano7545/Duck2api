@@ -13,6 +13,8 @@ import (
 type ImageResult struct {
 	Text   string
 	Images []duckgotypes.ImagePart
+	// Prompt 是上游转手喂给图像服务（gpt-image-2）的真实提示词（已改写），见 ApiResponse.GetImageGenPrompt。
+	Prompt string
 }
 
 // ReadImageResponse reads the SSE response and extracts both text and image parts
@@ -20,6 +22,7 @@ func ReadImageResponse(response *http.Response) ImageResult {
 	reader := bufio.NewReader(response.Body)
 	var textBuilder strings.Builder
 	var images []duckgotypes.ImagePart
+	var imagePrompt string
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -48,6 +51,13 @@ func ReadImageResponse(response *http.Response) ImageResult {
 			textBuilder.WriteString(apiResp.Message)
 		}
 
+		// 出图工具调用：这里带的是喂给图像服务的真实提示词（上游改写后）。
+		if apiResp.ToolName == "GenerateImage" && apiResp.ToolArguments != "" {
+			if p := apiResp.GetImageGenPrompt(); p != "" {
+				imagePrompt = p
+			}
+		}
+
 		// Extract image from parts (legacy format)
 		for _, part := range apiResp.Parts {
 			if part.Type == "generated-image" || part.Type == "image" {
@@ -72,5 +82,6 @@ func ReadImageResponse(response *http.Response) ImageResult {
 	return ImageResult{
 		Text:   textBuilder.String(),
 		Images: images,
+		Prompt: imagePrompt,
 	}
 }

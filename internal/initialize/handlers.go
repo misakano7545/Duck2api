@@ -510,7 +510,7 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 		}
 		imageData = append(imageData, officialtypes.ImageData{
 			B64JSON:       b64,
-			RevisedPrompt: result.Text,
+			RevisedPrompt: imageRevisedPrompt(result),
 		})
 	}
 
@@ -518,6 +518,16 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 		Created: time.Now().Unix(),
 		Data:    imageData,
 	})
+}
+
+// imageRevisedPrompt 优先回上游喂给图像服务（gpt-image-2）的真实提示词——用户给的 prompt
+// 会被上游改写后再送进去，抓这句才拿得到"实际画的那句话"；没有才退回助手文本。
+// ponytail: 出图/改图两处共用一次取舍，别写两遍。
+func imageRevisedPrompt(result duckgo.ImageResult) string {
+	if result.Prompt != "" {
+		return result.Prompt
+	}
+	return result.Text
 }
 
 func (h *Handler) imageEdits(c *gin.Context) {
@@ -680,7 +690,7 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, model string, image
 		}
 		imageData = append(imageData, officialtypes.ImageData{
 			B64JSON:       b64,
-			RevisedPrompt: result.Text,
+			RevisedPrompt: imageRevisedPrompt(result),
 		})
 	}
 
