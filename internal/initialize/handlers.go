@@ -442,14 +442,16 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 	// 默认走 duck.ai 原生图片模型：POST /duckchat/v1/chat + model=image-generation，
 	// 提示词原样进图（不被聊天模型改写）。显式点名一个聊天模型时才走旧路径
 	// 「聊天模型 + GenerateImage 工具」（那条路出图由 gpt-image-2 出，原生的是 gpt-image-1.5）。
+	// 别名（gpt-image-1.5 / gpt-image-2 等）见 duckgo.ResolveImageModel。
+	native, imageModel := duckgo.ResolveImageModel(req.Model)
 	var translatedRequest duckgotypes.ApiRequest
-	if req.Model == "" || req.Model == duckgo.NativeImageModel {
-		translatedRequest = duckgotypes.NewApiRequest(duckgo.NativeImageModel)
+	if native {
+		translatedRequest = duckgotypes.NewApiRequest(imageModel)
 		translatedRequest.ReasoningEffort = "" // 实测能用的 body 里没有该键，空值靠 omitempty 省掉
 		translatedRequest.AddMessage("user", req.Prompt)
 	} else {
 		chatReq := officialtypes.APIRequest{
-			Model: req.Model,
+			Model: imageModel,
 			Messages: []officialtypes.ApiMessage{
 				{Role: "user", Content: req.Prompt},
 			},
@@ -565,9 +567,6 @@ func (h *Handler) imageEdits(c *gin.Context) {
 	}
 
 	model := c.Request.FormValue("model")
-	if model == "" {
-		model = "gpt-5.6-luna"
-	}
 
 	// Read image file
 	file, _, err := c.Request.FormFile("image")
@@ -617,15 +616,18 @@ func (h *Handler) handleImageEditJSON(c *gin.Context, req officialtypes.ImageEdi
 		return
 	}
 
-	model := req.Model
-	if model == "" {
-		model = "gpt-5.6-luna"
-	}
-
-	h.doImageEdit(c, req.Prompt, model, req.Image, req.ReasoningEffort)
+	h.doImageEdit(c, req.Prompt, req.Model, req.Image, req.ReasoningEffort)
 }
 
 func (h *Handler) doImageEdit(c *gin.Context, prompt string, model string, imageB64 string, reasoningEffort string) {
+	// 出图模型别名归一，两处入口（JSON / multipart）都从这里过。
+	// 原生图片模型只实测过文生图，改图一律落到「聊天模型 + GenerateImage 工具」。
+	if native, real := duckgo.ResolveImageModel(model); native {
+		model = duckgo.ToolImageChatModel
+	} else {
+		model = real
+	}
+
 	// Build the prompt with image context
 	editPrompt := prompt
 

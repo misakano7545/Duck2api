@@ -119,7 +119,7 @@ curl http://localhost:8080/v1/images/generations \
   -d '{"prompt": "一只可爱的猫咪坐在窗台上"}'
 ```
 
-`model` 也可以显式点名一个聊天模型（如 `gpt-5.6-luna`），那就改走「聊天模型 + `GenerateImage` 工具」那条老路：提示词会被上游改写后再送进图像服务。两条路出图不同——原生是 `gpt-image-1.5`，工具路径是 `gpt-image-2`（把返回的 JPEG 丢给 `strings | grep version` 就能看出 C2PA 生成器）。一次请求返回 1 张图；流里那个 `partial-image`/`status:partial` 的扩散中间态（多眼扭曲）不再当输出图返回。
+`model` 可以留空；也可以填 **别名**：`gpt-image-1.5` / `gpt-image-1` 等同原生（默认），`gpt-image-2` 等同显式点名工具路径。别名按成品图 C2PA 里能看到的生成器名设计——那些名字本身不是可请求的 id，直传上游只会 404 `ERR_MODEL_UNAVAILABLE`（实测 `gpt-image-1`、`gpt-image-2`、`gpt-image-1-mini`、`dall-e-3` 全 404）。填任意聊天模型名（如 `gpt-5.6-luna`）也走工具路径，提示词会被上游改写后再送进图像服务。两条路出图不同——原生是 `gpt-image-1.5`，工具路径是 `gpt-image-2`（把返回的 JPEG 丢给 `strings | grep version` 就能看出 C2PA 生成器）。一次请求返回 1 张图；流里那个 `partial-image`/`status:partial` 的扩散中间态（多眼扭曲）不再当输出图返回。
 
 ### 图像编辑
 

@@ -14,6 +14,25 @@ import (
 // 旧的专用图片端点 /duckchat/v1/images（同一个模型）已 410 ERR_ENDPOINT_DEPRECATED。
 const NativeImageModel = "image-generation"
 
+// ToolImageChatModel 是「聊天模型 + GenerateImage 工具」那条路的默认载体模型：
+// 出图由 gpt-image-2 出（原生那条是 gpt-image-1.5），代价是提示词被上游改写。
+const ToolImageChatModel = "gpt-5.6-luna"
+
+// ResolveImageModel 归一化出图请求里的 model 别名，返回 (是否走原生图片模型, 实际模型名)。
+//
+// 别名表按"客户端能看见的名字"设计：成品图 C2PA 里的生成器名（gpt-image-1.5 / gpt-image-2）
+// 都能当 model 传进来，落到真正出那张图的上游路径上——否则 gpt-image-* 当 model 直传上游必 404
+// ERR_MODEL_UNAVAILABLE（实测 gpt-image-1/gpt-image-2/gpt-image-1-mini/dall-e-3 全 404）。
+func ResolveImageModel(model string) (native bool, real string) {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "", "image-generation", "gpt-image-1.5", "gpt-image-1":
+		return true, NativeImageModel
+	case "gpt-image-2":
+		return false, ToolImageChatModel
+	}
+	return false, model
+}
+
 // ImageResult holds the extracted image data from the SSE stream
 type ImageResult struct {
 	Text   string

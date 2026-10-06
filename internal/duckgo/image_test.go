@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+// 别名归一：C2PA 里能看到的名字也要能当 model 传（gpt-image-1.5 → 原生、gpt-image-2 → 工具路径）。
+func TestResolveImageModel(t *testing.T) {
+	cases := []struct {
+		in       string
+		native   bool
+		wantReal string
+	}{
+		{"", true, NativeImageModel},
+		{"image-generation", true, NativeImageModel},
+		{"gpt-image-1.5", true, NativeImageModel},
+		{"gpt-image-1", true, NativeImageModel},
+		{"GPT-Image-2", false, ToolImageChatModel},
+		{"gpt-image-2", false, ToolImageChatModel},
+		{"  gpt-image-2  ", false, ToolImageChatModel},
+		{"gpt-5.6-luna", false, "gpt-5.6-luna"},
+		{"mistral-small-2603", false, "mistral-small-2603"},
+		// 没有可请求的 id：直传上游只会 404，别名表不编造映射，原样透出。
+		{"dall-e-3", false, "dall-e-3"},
+	}
+	for _, c := range cases {
+		native, real := ResolveImageModel(c.in)
+		if native != c.native || real != c.wantReal {
+			t.Errorf("ResolveImageModel(%q) = (%v,%q)，期望 (%v,%q)", c.in, native, real, c.native, c.wantReal)
+		}
+	}
+}
+
 // 废稿（partial）不能当输出图返回：只有成品算图，废稿仅在拿不到成品时兜底。
 func TestReadImageResponseSkipsDrafts(t *testing.T) {
 	cases := []struct {
