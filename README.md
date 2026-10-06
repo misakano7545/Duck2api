@@ -182,11 +182,19 @@ curl http://localhost:8080/v1/audio/speech \
 
 | 模型 | 类型 | 说明 |
 |------|------|------|
-| `gpt-5.4-nano` | 推理 | OpenAI 最新轻量推理模型 |
-| `gpt-5.4-mini` | 推理 | OpenAI 推理模型 |
-| `claude-haiku-4-5` | 通用 | Anthropic Claude |
-| `tinfoil/gpt-oss-120b` | 通用 | OpenAI GPT-1.5 120B |
-| `mistral-small` | 通用 | Mistral AI |
+| `gpt-6-luna` | 通用 | GPT-6 Luna（上游列表未公开，本项目补入 `/v1/models`） |
+| `gpt-5.6-luna` | 推理 | GPT-5.6 Luna |
+| `gpt-5.6-terra` | 推理 | GPT-5.6 Terra，需 plus/pro |
+| `gpt-5.6-sol` | 推理 | GPT-5.6 Sol，需 pro |
+| `gpt-5.4-mini` | 推理 | GPT-5.4 mini |
+| `claude-sonnet-4-6` | 推理 | Claude Sonnet 4.6，需 plus/pro |
+| `claude-opus-4-8` | 推理 | Claude Opus 4.8，需 pro |
+| `claude-haiku-4-5` | 通用 | Claude Haiku 4.5 |
+| `tinfoil/gemma4-31b` | 通用 | Gemma 4 31B |
+| `mistral-small-2603` | 通用 | Mistral Small 4（上游当前下架） |
+| `tinfoil/gpt-oss-120b` | 通用 | gpt-oss 120B（上游当前返回 400） |
+
+清单就是 `/v1/models` 的实时输出（直接透传上游 + 补入 `gpt-6-luna`）。标「需 plus/pro」的模型在匿名档会被上游拒成 `404 ERR_MODEL_RESTRICTED`，要它们得配登录态。读图/出图能力跟模型绑定（`supportsImageUpload` + `GenerateImage` 工具），不是独立接口。
 
 ## 高级设置
 
