@@ -115,6 +115,9 @@ const hiddenModelID = "gpt-6-luna"
 // 上游列表里没有、但本网关实测可请求的模型。客户端靠 /v1/models 枚举，不在这里列出就点不到。
 var hiddenModels = []struct{ id, ownedBy string }{
 	{hiddenModelID, "openai"},
+	// gpt-5.6-luna 第二天起上游 /duckchat/v1/models 不再返回，但实测仍可对话（2026-10-07），
+	// 且是工具路径出图的默认载体模型 —— 不补录客户端就枚举不到它。
+	{duckgo.ToolImageChatModel, "openai"},
 	{duckgo.NativeImageModel, "duck.ai"},
 	{"gpt-image-1.5", "duck.ai"}, // 出图别名 → 原生图片模型
 	{"gpt-image-2", "duck.ai"},   // 出图别名 → 聊天模型 + GenerateImage 工具
