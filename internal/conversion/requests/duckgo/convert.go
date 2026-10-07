@@ -117,7 +117,9 @@ func ConvertAPIRequestWithOptions(apiRequest officialtypes.APIRequest, reasoning
 		role := message.Role
 		content := message.Content
 		switch role {
-		case "system", "tool":
+		case "system", "developer", "tool":
+			// developer 是 OpenAI 新叫法里的 system(Responses API 的客户端把系统提示
+			// 放在 developer 消息里); 不认就会整段提示静默消失。
 			role = "user"
 			if message.Role == "tool" {
 				content = "[工具结果] " + contentText(content)
