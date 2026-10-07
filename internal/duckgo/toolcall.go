@@ -84,6 +84,25 @@ func OfficialToolCalls(calls []ToolCall) []officialtypes.ToolCallChunk {
 	return out
 }
 
+// ResponsesToolCalls 把解析出的调用转成 Responses API 的 function_call 输出项。
+// ponytail: 整块一次性给出, 不发 function_call_arguments.delta —— 与 chat 路径
+// 「工具调用不分片」同一取舍(见 OfficialToolCalls 上方注释)。
+func ResponsesToolCalls(calls []ToolCall) []officialtypes.ResponseOutput {
+	out := make([]officialtypes.ResponseOutput, 0, len(calls))
+	for _, call := range calls {
+		id := util.RandomHexadecimalString()
+		out = append(out, officialtypes.ResponseOutput{
+			ID:        "fc_" + id,
+			Type:      "function_call",
+			Status:    "completed",
+			CallID:    "call_" + id,
+			Name:      call.Name,
+			Arguments: call.Arguments,
+		})
+	}
+	return out
+}
+
 // StreamGate 边收边发的闸门。契约要求"调用工具时输出以 <tool_call> 开头",
 // 所以开头几个字符就能判定: 一旦确认不是工具调用就原样透传, 普通聊天的流式不受影响。
 type StreamGate struct {

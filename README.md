@@ -240,7 +240,7 @@ curl http://localhost:8080/v1/audio/speech \
 |------|----------|
 | `POST /v1/chat/completions` | `message.tool_calls` / 流式 `delta.tool_calls`，`finish_reason: "tool_calls"` |
 | `POST /v1/messages` | `content:[{type:"tool_use",…}]`，`stop_reason: "tool_use"`（流式走 `input_json_delta`） |
-| `POST /v1/responses` | 暂未接（只回文本） |
+| `POST /v1/responses` | `output:[{type:"function_call",call_id,name,arguments}]`，流式走 `response.output_item.added` / `.done`（`call_id` 供客户端回填 `function_call_output`） |
 
 多轮 loop：客户端回填的 `role:"tool"` 消息与助手历史里的 `tool_calls` 会折叠成文本带上去，模型据此收口。
 

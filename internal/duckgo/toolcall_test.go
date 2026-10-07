@@ -71,3 +71,35 @@ func TestStreamGate(t *testing.T) {
 		t.Fatalf("parsed %+v", calls)
 	}
 }
+
+// 解析结果回写成 Responses API 的 function_call 项: call_id 必须有(客户端拿它回填
+// function_call_output), arguments 原样保留, 并行调用各占一项。
+func TestResponsesToolCalls(t *testing.T) {
+	items := ResponsesToolCalls([]ToolCall{
+		{Name: "shell", Arguments: `{"cmd":"ls"}`},
+		{Name: "read", Arguments: "{}"},
+	})
+	if len(items) != 2 {
+		t.Fatalf("got %d items", len(items))
+	}
+	for i, item := range items {
+		if item.Type != "function_call" {
+			t.Fatalf("[%d] type = %q", i, item.Type)
+		}
+		if item.CallID == "" || item.ID == "" {
+			t.Fatalf("[%d] missing ids: %+v", i, item)
+		}
+		if item.Content != nil || item.Role != "" {
+			t.Fatalf("[%d] function_call 不该有 content/role: %+v", i, item)
+		}
+	}
+	if items[0].Name != "shell" || items[0].Arguments != `{"cmd":"ls"}` {
+		t.Fatalf("arguments 未原样保留: %+v", items[0])
+	}
+	if items[0].CallID == items[1].CallID {
+		t.Fatal("call_id 必须各不相同")
+	}
+	if got := ResponsesToolCalls(nil); len(got) != 0 {
+		t.Fatalf("空输入应得空输出, got %+v", got)
+	}
+}

@@ -43,6 +43,11 @@ func (r ResponseAPIRequest) ToChatCompletionRequest() APIRequest {
 	request := APIRequest{
 		Model:  r.Model,
 		Stream: r.Stream,
+		// 上游没有函数调用通道, Tools 只是提示词模拟的输入(见 duckgo/toolcall.go);
+		// 不透传的话走 responses 路的客户端(Codex CLI / Hermes codex_responses)
+		// 会连工具定义一起静默丢掉, 表现为"模型说它不能执行命令"。
+		Tools:      r.Tools,
+		ToolChoice: r.ToolChoice,
 	}
 
 	if strings.TrimSpace(request.Model) == "" {

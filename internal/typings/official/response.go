@@ -191,11 +191,16 @@ type ResponseAPI struct {
 }
 
 type ResponseOutput struct {
-	ID      string                  `json:"id"`
-	Type    string                  `json:"type"`
-	Status  string                  `json:"status"`
-	Role    string                  `json:"role"`
-	Content []ResponseOutputContent `json:"content"`
+	ID     string `json:"id,omitempty"`
+	Type   string `json:"type"`
+	Status string `json:"status,omitempty"`
+	Role   string `json:"role,omitempty"`
+	// Content 只有 message 项有; function_call 项靠下面三个字段,
+	// 所以 role/content 都 omitempty, 免得多出空 role/content 干扰客户端。
+	Content   []ResponseOutputContent `json:"content,omitempty"`
+	CallID    string                  `json:"call_id,omitempty"`
+	Name      string                  `json:"name,omitempty"`
+	Arguments string                  `json:"arguments,omitempty"`
 }
 
 type ResponseOutputContent struct {

@@ -229,6 +229,7 @@ func (h *Handler) responses(c *gin.Context) {
 	start := time.Now()
 	stats := duckgo.HandlerStats{
 		Start:        start,
+		Tools:        chatRequest.Tools != nil,
 		PromptTokens: inputTokens,
 		CachedTokens: cachedTokens,
 		Effort:       effort,
@@ -245,7 +246,7 @@ func (h *Handler) responses(c *gin.Context) {
 	c.Header("X-TTFT-Ms", fmt.Sprintf("%d", result.TTFTMs))
 	c.Header("X-Total-Time-Ms", fmt.Sprintf("%d", result.TotalMs))
 
-	c.JSON(http.StatusOK, officialtypes.NewResponseAPIFull(
+	completed := officialtypes.NewResponseAPIFull(
 		result.Text,
 		translatedRequest.Model,
 		int64(inputTokens),
@@ -254,7 +255,13 @@ func (h *Handler) responses(c *gin.Context) {
 		result.TTFTMs,
 		result.TotalMs,
 		effort,
-	))
+	)
+	// 模型要调工具: output 换成 function_call 项, output_text 置空(与上游 Responses API 一致)。
+	if len(result.ToolCalls) > 0 {
+		completed.Output = duckgo.ResponsesToolCalls(result.ToolCalls)
+		completed.OutputText = ""
+	}
+	c.JSON(http.StatusOK, completed)
 }
 
 func (h *Handler) startDuckDuckGoRequest(originalRequest officialtypes.APIRequest) (duckgotypes.ApiRequest, *http.Response, error) {
@@ -300,6 +307,8 @@ type responsesStreamResult struct {
 // SSE events (response.created → output_item.added → content_part.added →
 // output_text.delta per token → output_text.done → content_part.done →
 // output_item.done → response.completed).
+// 带工具的请求先过闸门(与 chat / anthropic 两条路同一套 duckgo.StreamGate):
+// 判定是工具调用就发 function_call 输出项, 否则才发 message / output_text。
 func handleResponsesStream(c *gin.Context, body io.ReadCloser, model string, stats duckgo.HandlerStats) responsesStreamResult {
 	defer body.Close()
 
@@ -314,6 +323,12 @@ func handleResponsesStream(c *gin.Context, body io.ReadCloser, model string, sta
 	inProgress.Output = []officialtypes.ResponseOutput{}
 	inProgress.Usage = officialtypes.ResponseUsage{InputTokens: stats.PromptTokens}
 
+	// response.created
+	writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.created", Sequence: 1, Response: &inProgress})
+
+	// 输出项要等闸门判定完才知道是 message 还是 function_call, 所以这两条推迟到第一个
+	// 可下发的分片; 无工具的请求闸门不启用, 第一块就到, 事件顺序与改动前一致。
+	gate := duckgo.NewStreamGate(stats.Tools)
 	output := officialtypes.NewResponseOutput("")
 	output.Status = "in_progress"
 	part := officialtypes.ResponseOutputContent{
@@ -321,13 +336,17 @@ func handleResponsesStream(c *gin.Context, body io.ReadCloser, model string, sta
 		Text:        "",
 		Annotations: []interface{}{},
 	}
-
-	// response.created
-	writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.created", Sequence: 1, Response: &inProgress})
-	// response.output_item.added
-	writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.output_item.added", Sequence: 2, OutputIndex: 0, Item: &output})
-	// response.content_part.added
-	writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.content_part.added", Sequence: 3, ItemID: output.ID, OutputIndex: 0, ContentIndex: 0, Part: part})
+	started := false
+	startMessageItem := func() {
+		if started {
+			return
+		}
+		started = true
+		// response.output_item.added
+		writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.output_item.added", Sequence: 2, OutputIndex: 0, Item: &output})
+		// response.content_part.added
+		writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.content_part.added", Sequence: 3, ItemID: output.ID, OutputIndex: 0, ContentIndex: 0, Part: part})
+	}
 
 	var sb strings.Builder
 	var firstTokenSet bool
@@ -365,6 +384,11 @@ func handleResponsesStream(c *gin.Context, body io.ReadCloser, model string, sta
 			ttftMs = time.Since(stats.Start).Milliseconds()
 		}
 
+		emit, hold := gate.Push(delta.Message)
+		if hold || emit == "" {
+			continue
+		}
+		startMessageItem()
 		// response.output_text.delta
 		writeRespEvent(c, officialtypes.ResponseStreamEvent{
 			Type:         "response.output_text.delta",
@@ -372,13 +396,48 @@ func handleResponsesStream(c *gin.Context, body io.ReadCloser, model string, sta
 			ItemID:       output.ID,
 			OutputIndex:  0,
 			ContentIndex: 0,
-			Delta:        delta.Message,
+			Delta:        emit,
 		})
 	}
 
 	fullText := sb.String()
 	outputTokens := util.CountToken(fullText)
 	totalMs := time.Since(stats.Start).Milliseconds()
+
+	// 模型要调工具: output 换成 function_call 项, 不分片整块发(与 chat 路径同一取舍)。
+	var toolCalls []duckgo.ToolCall
+	if gate.Holding() {
+		toolCalls = duckgo.ParseToolCalls(gate.Buffered())
+	}
+	if len(toolCalls) > 0 {
+		completed := officialtypes.NewResponseAPIFull("", model, int64(stats.PromptTokens), int64(outputTokens), int64(stats.CachedTokens), ttftMs, totalMs, stats.Effort)
+		completed.Output = duckgo.ResponsesToolCalls(toolCalls)
+		for i := range completed.Output {
+			writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.output_item.added", Sequence: 0, OutputIndex: i, Item: &completed.Output[i]})
+			writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.output_item.done", Sequence: 0, OutputIndex: i, Item: &completed.Output[i]})
+		}
+		// response.completed
+		writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.completed", Sequence: 0, Response: &completed})
+		c.Writer.Flush()
+		return responsesStreamResult{
+			outputTokens: outputTokens,
+			ttftMs:       ttftMs,
+			totalMs:      totalMs,
+		}
+	}
+
+	startMessageItem()
+	// 兜底: 看着像工具标记但解析不出来, 把扣住的当普通文本补发, 别让客户端收空。
+	if gate.Holding() && gate.Buffered() != "" {
+		writeRespEvent(c, officialtypes.ResponseStreamEvent{
+			Type:         "response.output_text.delta",
+			Sequence:     0,
+			ItemID:       output.ID,
+			OutputIndex:  0,
+			ContentIndex: 0,
+			Delta:        gate.Buffered(),
+		})
+	}
 
 	donePart := officialtypes.ResponseOutputContent{
 		Type:        "output_text",
