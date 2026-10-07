@@ -1,6 +1,7 @@
 package official
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -100,16 +101,28 @@ func responseInputItemToMessages(item interface{}) []ApiMessage {
 			return nil
 		}
 		return []ApiMessage{{Role: role, Content: content}}
+	case "function_call":
+		// 助手那次的调用必须留在历史里。丢掉的后果不是"少点上下文": 第二轮带着工具
+		// 结果上去却没有"谁要的", 模型会把同一个调用再发一遍, 多轮 loop 永远不闭合。
+		// 措辞与 chat 路径同一口径(见 conversion/requests/duckgo: [调用工具] name args)。
+		name, _ := itemMap["name"].(string)
+		if name == "" {
+			return nil
+		}
+		args := responseContentText(itemMap["arguments"])
+		if args == "" {
+			if b, err := json.Marshal(itemMap["arguments"]); err == nil {
+				args = string(b)
+			}
+		}
+		return []ApiMessage{{Role: "assistant", Content: fmt.Sprintf("[调用工具] %s %s", name, args)}}
 	case "function_call_output":
 		output := responseContentText(itemMap["output"])
 		if output == "" {
 			return nil
 		}
-		callID, _ := itemMap["call_id"].(string)
-		if callID != "" {
-			output = fmt.Sprintf("Tool output for %s:\n%s", callID, output)
-		}
-		return []ApiMessage{{Role: "user", Content: output}}
+		// role=tool 由转换层加上 [工具结果] 前缀, 与 chat 路径一致。
+		return []ApiMessage{{Role: "tool", Content: output}}
 	default:
 		return nil
 	}
