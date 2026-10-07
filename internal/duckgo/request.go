@@ -127,7 +127,12 @@ func POSTconversation(client httpclient.AuroraHttpClient, request duckgotypes.Ap
 			return response, nil
 		}
 
+		// 关掉前排空并存下 body：Close 之后调用方 io.ReadAll 只能读到空串，
+		// 上游的错误类型（ERR_INPUT_LIMIT / ERR_RATE_LIMIT / ERR_MODEL_RESTRICTED…）
+		// 会整个丢掉，客户端只看到一个光秃秃的 429，分不清"输入超限"还是"被限速"。
+		errBody, _ := io.ReadAll(response.Body)
 		response.Body.Close()
+		response.Body = io.NopCloser(bytes.NewReader(errBody))
 		ResetXVQD()
 		token, err = InitXVQD(client, proxyUrl)
 		if err != nil {
