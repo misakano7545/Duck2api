@@ -231,7 +231,7 @@ curl http://localhost:8080/v1/audio/speech \
 | `PREFIX` | URL 前缀 | `/api` |
 | `TLS_CERT` | TLS 证书路径 | `/path/to/cert.pem` |
 | `TLS_KEY` | TLS 密钥路径 | `/path/to/key.pem` |
-| `MAX_INPUT_TOKENS` | 上游单请求输入上限（token）。超了就地裁掉旧历史再发，首条与最新几条必留；首条自己就超时回 `400 context_length_exceeded`。负数关闭守卫 | `3800`（默认） |
+| `MAX_INPUT_TOKENS` | 上游单请求输入上限（网关 tiktoken 计）。超了只裁旧历史：工具约定与用户这一轮绝不动；前缀自己就超时回 `400 context_length_exceeded`。负数关闭守卫 | `5200`（默认） |
 
 上游单请求上限实测 ≈4k token（19,017 字符通过、20,017 字符被拒 `ERR_INPUT_LIMIT`），且是**确定性**的：完全空闲 12 分钟后的单发 36,000 字符仍然被拒。没这个守卫时客户端要白等约 67s 才拿到一个分不清原因的 429。
 
