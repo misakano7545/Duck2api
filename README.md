@@ -257,10 +257,10 @@ curl http://localhost:8080/v1/audio/speech \
 |---|---|---|---|
 | 默认 | 34 | 12,660 | ✗ 超上限 |
 | `--ignore-rules` | 34 | 12,326 | ✗ 超上限 |
-| `-t terminal` | 4 | 6,598 | ✓ 回了完整 `function_call` |
-| `-t terminal,files,web` | 6 | 6,650 | ✓ 回了完整 `function_call` |
+| `-t terminal` | 4 | 6,598 | ✓ 回了 `function_call` |
+| `-t terminal,file,web` | 10 | 6,793 | ✓ 回了 `function_call`，云端端到端跑通 |
 
-即 agent 要用 `-t <toolset>` 挑一个够用的工具集：system 提示占大头，而工具集越小 Hermes 的 system 提示也跟着越小（36,224 → 14,551 字符）。
+即 agent 要用 `-t <toolset>` 挑一个够用的工具集：system 提示占大头，而工具集越小 Hermes 的 system 提示也跟着越小（36,224 → 14,551 字符）。工具集名取自 Hermes 的 `toolsets.TOOLSETS`（`file` 是单数，写 `files` 会被静默忽略）。
 
 ### 代理池
 
