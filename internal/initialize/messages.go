@@ -63,20 +63,15 @@ func (h *Handler) messagesHandler(c *gin.Context) {
 		cacheCreation, cacheRead = util.RecordCache(promptHash, inputTokens)
 	}
 
-	translated, response, err := h.startDuckDuckGoRequest(apiReq)
+	_, response, err := h.startDuckDuckGoRequest(apiReq)
 	if err != nil {
-		c.JSON(upstreamStatus(c, err), gin.H{"error": err.Error()})
+		writeGatewayError(c, err)
 		return
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		c.JSON(response.StatusCode, gin.H{"error": gin.H{
-			"message": duckgo.ReadResponseError(response).Error(),
-			"type":    "upstream_error",
-			"code":    response.Status,
-			"model":   translated.Model,
-		}})
+		writeUpstreamFailure(c, response)
 		return
 	}
 

@@ -118,6 +118,26 @@ func (a *ApiRequest) AddMessageWithParts(role string, parts []ContentPart) {
 	})
 }
 
+// 下面几个访问器只为让别的包能按上限修剪消息：messages 类型不导出，别处连变量都声明不了。
+// 上限守卫（conversion/requests/duckgo/fit.go）靠它们就地删旧历史。
+
+func (a *ApiRequest) MessageCount() int { return len(a.Messages) }
+
+func (a *ApiRequest) MessageText(i int) string {
+	if i < 0 || i >= len(a.Messages) {
+		return ""
+	}
+	return a.Messages[i].Content.TextContent()
+}
+
+// DropMessage 删掉第 i 条消息；越界是空操作。
+func (a *ApiRequest) DropMessage(i int) {
+	if i < 0 || i >= len(a.Messages) {
+		return
+	}
+	a.Messages = append(a.Messages[:i], a.Messages[i+1:]...)
+}
+
 func NewApiRequest(model string) ApiRequest {
 	return ApiRequest{
 		Model:                      model,

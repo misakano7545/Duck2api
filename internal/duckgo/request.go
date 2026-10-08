@@ -133,6 +133,15 @@ func POSTconversation(client httpclient.AuroraHttpClient, request duckgotypes.Ap
 		errBody, _ := io.ReadAll(response.Body)
 		response.Body.Close()
 		response.Body = io.NopCloser(bytes.NewReader(errBody))
+
+		// 确定性失败（输入超限 / 模型无权限 / 出口被拒）重试毫无意义：只会把挑战退避
+		// （1+2+4+8+16s，最多 4 轮）再走一遍，客户端白等约 67s 才拿到一个分不清原因的
+		// 429。实测 2026-10：36000 字符的请求在完全空闲 12 分钟后单发仍是 ERR_INPUT_LIMIT，
+		// 3.7s 返回 —— 尺寸上限不是等出来的。
+		if !WorthRetrying(UpstreamErrorTypeOf(errBody)) {
+			return response, nil
+		}
+
 		ResetXVQD()
 		token, err = InitXVQD(client, proxyUrl)
 		if err != nil {

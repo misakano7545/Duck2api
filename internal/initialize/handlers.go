@@ -50,6 +50,49 @@ func upstreamStatus(c *gin.Context, err error) int {
 	return http.StatusInternalServerError
 }
 
+// writeClientError 把上游/网关判定的失败写成客户端能分辨的 typed 错误。
+// 客户端必须一眼分清「这次请求本身太大」（400 context_length_exceeded）与
+// 「现在按指纹被限速」（429 rate_limit_exceeded）：原先两者都是同一个光秃秃 429，
+// Hermes 实测因此连撞三次后报 provider unavailable，看不出真正原因。
+func writeClientError(c *gin.Context, t duckgo.UpstreamErrorType) {
+	status, typ, code := duckgo.ClientError(t)
+	if status == http.StatusTooManyRequests && c.Writer.Header().Get("Retry-After") == "" {
+		c.Header("Retry-After", "60")
+	}
+	c.JSON(status, gin.H{"error": gin.H{
+		"message": duckgo.ClientErrorMessage(t),
+		"type":    typ,
+		"param":   nil,
+		"code":    code,
+	}})
+}
+
+// writeUpstreamFailure 处理上游非 200：按错误类型回 typed 状态码与 code。
+// 上游原文（含 r 事件号与站点内部字段）只进日志，不回给客户端。
+func writeUpstreamFailure(c *gin.Context, response *http.Response) {
+	body, _ := io.ReadAll(response.Body)
+	t := duckgo.UpstreamErrorTypeOf(body)
+	if t == duckgo.ErrTypeUnknown {
+		log.Printf("[UPSTREAM] %d 未归类: %s", response.StatusCode, truncateStr(string(body), 300))
+	}
+	writeClientError(c, t)
+}
+
+// writeGatewayError 处理「网关自己判定 / 取挑战失败」的 err。输入超限在打到上游之前
+// 就拒绝，其余沿用 upstreamStatus 的既有语义。
+func writeGatewayError(c *gin.Context, err error) {
+	if errors.Is(err, duckgo.ErrInputTooLarge) {
+		writeClientError(c, duckgo.ErrTypeInputLimit)
+		return
+	}
+	status := upstreamStatus(c, err)
+	c.JSON(status, gin.H{"error": gin.H{
+		"message": err.Error(),
+		"type":    "upstream_error",
+		"code":    "upstream_failure",
+	}})
+}
+
 func optionsHandler(c *gin.Context) {
 	// Set headers for CORS
 	c.Header("Access-Control-Allow-Origin", "*")
@@ -88,22 +131,14 @@ func (h *Handler) duckduckgo(c *gin.Context) {
 
 	translated_request, response, err := h.startDuckDuckGoRequest(original_request)
 	if err != nil {
-		c.JSON(upstreamStatus(c, err), gin.H{"error": err.Error()})
+		writeGatewayError(c, err)
 		return
 	}
 	defer response.Body.Close()
 
 	// Debug: log upstream response status
 	if response.StatusCode != 200 {
-		bodyBytes, _ := io.ReadAll(response.Body)
-		log.Printf("[DEBUG] DuckDuckGo returned %d: %s", response.StatusCode, string(bodyBytes))
-		// Reconstruct response for error handler
-		c.JSON(response.StatusCode, gin.H{"error": gin.H{
-			"message": string(bodyBytes),
-			"type":    "upstream_error",
-			"code":    response.Status,
-			"model":   translated_request.Model,
-		}})
+		writeUpstreamFailure(c, response)
 		return
 	}
 
@@ -210,16 +245,12 @@ func (h *Handler) responses(c *gin.Context) {
 
 	translatedRequest, response, err := h.startDuckDuckGoRequest(chatRequest)
 	if err != nil {
-		c.JSON(upstreamStatus(c, err), gin.H{
-			"error": err.Error(),
-		})
+		writeGatewayError(c, err)
 		return
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		c.JSON(response.StatusCode, gin.H{
-			"error": duckgo.ReadResponseError(response).Error(),
-		})
+		writeUpstreamFailure(c, response)
 		return
 	}
 
@@ -276,6 +307,15 @@ func (h *Handler) startDuckDuckGoRequest(originalRequest officialtypes.APIReques
 	webSearch := originalRequest.WebSearch != nil && *originalRequest.WebSearch
 
 	translatedRequest := duckgoConvert.ConvertAPIRequestWithOptions(originalRequest, reasoningEffort, webSearch)
+
+	// 上游单请求上限是硬的（≈4k token，见 fit.go）：在这里一次把三条入站路（chat /
+	// responses / messages）都管住，别让请求白白打到上游再吃一个 67s 的 429。
+	if dropped, ok := duckgoConvert.FitToUpstreamLimit(&translatedRequest); !ok {
+		return duckgotypes.ApiRequest{}, nil, duckgo.ErrInputTooLarge
+	} else if dropped > 0 {
+		log.Printf("[FIT] 上游输入上限 %d token，丢弃 %d 条旧历史（保留首条与最新几条）",
+			duckgoConvert.MaxInputTokens(), dropped)
+	}
 
 	// Debug: log request
 	reqJSON, _ := json.Marshal(translatedRequest)
