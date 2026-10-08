@@ -2,6 +2,8 @@ package duckgo
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 
 	officialtypes "aurora/internal/typings/official"
@@ -28,7 +30,7 @@ type ToolCall struct {
 }
 
 // ToolInstruction 生成注入 system 的工具说明与输出约定。
-func ToolInstruction(toolsJSON string) string {
+func ToolInstruction(toolsDoc string) string {
 	// 措辞要点(踩过的坑): 只说 "你可以调用下列工具" 会被 claude 系模型当成越权注入而拒绝
 	// (回 "工具列表与我的系统提示不符"); 必须点明这是本次 API 调用的线格式约定、
 	// 函数由客户端注册、执行方是客户端。改措辞就是这条链路的调参旋钮。
@@ -37,7 +39,114 @@ func ToolInstruction(toolsJSON string) string {
 		"你必须只输出下面这一行(可多行表示并行调用), 不要解释、不要直接凭自己回答、不要写成代码块:\n" +
 		toolCallOpen + `{"name":"函数名","arguments":{参数}}` + toolCallClose + "\n" +
 		"客户端会执行它并把结果回传给你。若问题完全不需要这些函数, 正常回答即可。\n\n" +
-		"客户端注册的函数(JSON Schema):\n" + toolsJSON
+		"客户端注册的函数:\n" + toolsDoc
+}
+
+// 工具块是注入提示词里最大的一块, 而它整个是我们自己造的。实测一个 34 工具的客户端
+// (Hermes 默认) 光 schema 就 48,279 字符 —— 比它的 system 提示(36,224)还大, 直接把
+// 请求顶过上游的单请求上限。模型要发出正确的调用只认三样: 函数名、参数名、以及够用来
+// 选对工具的描述。所以按 `名字(参数:类型) — 描述` 压成一行一个, 其余的 JSON Schema
+// 细节(嵌套、枚举、additionalProperties…)对提示词模拟这条链路没有价值。
+const (
+	toolLineDescLimit = 80   // 每个工具描述保留多少字符
+	toolDocCharLimit  = 8000 // 整块上限, 超了后面的工具只留名字
+)
+
+// CompactToolList 把客户端的三种 tools 形状压成紧凑清单。
+// chat/OpenAI 是 {type,function:{name,parameters}}, responses 是平铺的
+// {type,name,parameters}, anthropic 是 {name,input_schema}。认不出的形状原样退回
+// JSON —— 宁可没省下体积, 也不要丢工具。
+func CompactToolList(tools interface{}) string {
+	if tools == nil {
+		return ""
+	}
+	list, ok := tools.([]interface{})
+	if !ok {
+		if b, err := json.Marshal(tools); err == nil {
+			return string(b)
+		}
+		return ""
+	}
+
+	var sb strings.Builder
+	for i, item := range list {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		fn, _ := m["function"].(map[string]interface{}) // chat 形状
+		if fn == nil {
+			fn = m // responses / anthropic
+		}
+		name, _ := fn["name"].(string)
+		if name == "" {
+			continue
+		}
+		schema, _ := fn["parameters"].(map[string]interface{})
+		if schema == nil {
+			schema, _ = fn["input_schema"].(map[string]interface{})
+		}
+		line := name + compactParams(schema)
+
+		if sb.Len() >= toolDocCharLimit {
+			sb.WriteString(fmt.Sprintf("\n(其余 %d 个工具因上游输入上限省略, 名字: %s)", len(list)-i, name))
+			break
+		}
+		if desc, _ := fn["description"].(string); desc != "" {
+			line += " — " + truncateRunes(strings.Join(strings.Fields(desc), " "), toolLineDescLimit)
+		}
+		sb.WriteString(line)
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// compactParams 把 JSON Schema 的 properties/required 压成 "(a:string, b:integer*)"
+// (带 * 的是必填)。没有参数就回 "()"。
+func compactParams(schema map[string]interface{}) string {
+	if schema == nil {
+		return "()"
+	}
+	props, _ := schema["properties"].(map[string]interface{})
+	if len(props) == 0 {
+		return "()"
+	}
+	required := map[string]bool{}
+	if reqs, ok := schema["required"].([]interface{}); ok {
+		for _, r := range reqs {
+			if s, ok := r.(string); ok {
+				required[s] = true
+			}
+		}
+	}
+	names := make([]string, 0, len(props))
+	for k := range props {
+		names = append(names, k)
+	}
+	sort.Strings(names) // map 遍历无序, 定序才能让同一请求每次生成同一份提示
+	parts := make([]string, 0, len(names))
+	for _, n := range names {
+		typ := "any"
+		if pm, ok := props[n].(map[string]interface{}); ok {
+			if t, ok := pm["type"].(string); ok && t != "" {
+				typ = t
+			}
+		}
+		p := n + ":" + typ
+		if required[n] {
+			p += "*"
+		}
+		parts = append(parts, p)
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
+}
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // ParseToolCalls 从模型输出里解析工具调用, 没有则返回 nil。

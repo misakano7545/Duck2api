@@ -18,14 +18,17 @@ import (
 //
 // 但本守卫用的是网关自己的 tiktoken 计数，它比上游的计数**偏高约 24%**：
 // 实测一个 Hermes agent 请求（system 2,469 + 工具约定 1,303 + 用户 1,295 = 5,067 tiktoken）
-// 被上游正常接受并回了 function_call，而它折合约 19k 字符 —— 正落在上面的边界上。
-// 所以默认值取 5,200（略高于已验证通过的 5,067），偏松：
+// 被上游正常接受并回了 function_call，而它折合约 19k 字符。
 //
-//	偏松的代价小（超了也只是一次 ~4s 的 typed 400，确定性失败已不重试），
-//	偏紧的代价大（会裁掉真实内容，或把一个上游本可服务的请求拒掉/裁坏）。
+// 实测边界（tiktoken 计，2026-10）：
 //
-// 要更准就按上面的方法重测：拿一个已知会被接受的请求，读它的 tiktoken 计数当上限。
-const DefaultMaxInputTokens = 5200
+//	6,598 通过（Hermes `-t terminal`，回了完整的 function_call）
+//	~7,300 通过（同一请求加 3.4k 字符填充）
+//	8,003 被拒 ERR_INPUT_LIMIT（单条 36,000 字符的用户消息）
+//
+// 默认 7,500 取在这个缝里，偏松：偏松的代价小（超了也只是一次 ~4s 的 typed 400，
+// 确定性失败已不重试），偏紧的代价大（会裁掉真实内容，或把一个上游本可服务的请求拒掉）。
+const DefaultMaxInputTokens = 7500
 
 // MaxInputTokens 生效上限；MAX_INPUT_TOKENS=0（或非法）按默认，负数表示关闭守卫。
 func MaxInputTokens() int {

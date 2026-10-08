@@ -101,9 +101,7 @@ func ConvertAPIRequestWithOptions(apiRequest officialtypes.APIRequest, reasoning
 	// 放开头(旧写法)模型会无视; 放结尾(旧写法)第二轮模型会对它回 "已了解" 而不干活。
 	toolInstruction := ""
 	if apiRequest.Tools != nil {
-		if b, err := json.Marshal(apiRequest.Tools); err == nil {
-			toolInstruction = dkgo.ToolInstruction(string(b))
-		}
+		toolInstruction = dkgo.ToolInstruction(dkgo.CompactToolList(apiRequest.Tools))
 	}
 	inserted := false
 	var pendingCalls []string

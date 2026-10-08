@@ -1,6 +1,10 @@
 package duckgo
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 // 工具调用的解析 + 流式闸门: 契约要求"要调用时只输出 <tool_call>...</tool_call>",
 // 闸门必须在开头就能判定, 且普通文本的流式不能被扣住。
@@ -69,6 +73,58 @@ func TestStreamGate(t *testing.T) {
 	calls := ParseToolCalls(g.Buffered())
 	if len(calls) != 1 || calls[0].Name != "get_weather" || calls[0].Arguments != `{"city":"北京"}` {
 		t.Fatalf("parsed %+v", calls)
+	}
+}
+
+// 工具块是我们注入的、也是提示词里最大的一块：必须压得动，且三种形状都要认。
+func TestCompactToolList(t *testing.T) {
+	weather := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"city": map[string]interface{}{"type": "string", "description": "城市名" + strings.Repeat("x", 200)},
+			"unit": map[string]interface{}{"type": "string"},
+		},
+		"required":             []interface{}{"city"},
+		"additionalProperties": false,
+	}
+
+	cases := []struct {
+		name  string
+		tools interface{}
+	}{
+		{"chat 嵌套", []interface{}{map[string]interface{}{
+			"type":     "function",
+			"function": map[string]interface{}{"name": "get_weather", "description": "查天气", "parameters": weather}}}},
+		{"responses 平铺", []interface{}{map[string]interface{}{
+			"type": "function", "name": "get_weather", "description": "查天气", "parameters": weather}}},
+		{"anthropic", []interface{}{map[string]interface{}{
+			"name": "get_weather", "description": "查天气", "input_schema": weather}}},
+	}
+	for _, tc := range cases {
+		got := CompactToolList(tc.tools)
+		if !strings.Contains(got, "get_weather(city:string*, unit:string)") {
+			t.Fatalf("%s: %q", tc.name, got)
+		}
+		if !strings.Contains(got, "查天气") {
+			t.Fatalf("%s: 描述丢了: %q", tc.name, got)
+		}
+		// 描述要截断：原描述 200+ 字, 不能整段带上去
+		if len([]rune(got)) > 200 {
+			t.Fatalf("%s: 没压住 (%d runes): %q", tc.name, len([]rune(got)), got)
+		}
+	}
+
+	// 同一请求两次生成的提示必须一致（map 遍历无序, 不排序就会每次不同）
+	once, twice := CompactToolList(cases[0].tools), CompactToolList(cases[0].tools)
+	if once != twice {
+		t.Fatalf("不稳定:\n%s\n%s", once, twice)
+	}
+	// 认不出的形状退回原 JSON, 不能把工具丢了
+	raw := `[{"weird":true,"name":"x"}]`
+	var parsed interface{}
+	_ = json.Unmarshal([]byte(raw), &parsed)
+	if got := CompactToolList(parsed); !strings.Contains(got, "x") {
+		t.Fatalf("退回失败: %q", got)
 	}
 }
 

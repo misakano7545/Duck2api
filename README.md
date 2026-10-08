@@ -231,13 +231,15 @@ curl http://localhost:8080/v1/audio/speech \
 | `PREFIX` | URL 前缀 | `/api` |
 | `TLS_CERT` | TLS 证书路径 | `/path/to/cert.pem` |
 | `TLS_KEY` | TLS 密钥路径 | `/path/to/key.pem` |
-| `MAX_INPUT_TOKENS` | 上游单请求输入上限（网关 tiktoken 计）。超了只裁旧历史：工具约定与用户这一轮绝不动；前缀自己就超时回 `400 context_length_exceeded`。负数关闭守卫 | `5200`（默认） |
+| `MAX_INPUT_TOKENS` | 上游单请求输入上限（网关 tiktoken 计，实测边界在 7,300–8,000 之间）。超了只裁旧历史：工具约定与用户这一轮绝不动；前缀自己就超时回 `400 context_length_exceeded`。负数关闭守卫 | `7500`（默认） |
 
 上游单请求上限实测 ≈4k token（19,017 字符通过、20,017 字符被拒 `ERR_INPUT_LIMIT`），且是**确定性**的：完全空闲 12 分钟后的单发 36,000 字符仍然被拒。没这个守卫时客户端要白等约 67s 才拿到一个分不清原因的 429。
 
 ### 工具调用（函数调用）
 
 上游 duck.ai 没有函数调用通道，所以这里是**提示词模拟**：请求里带 `tools` 时，工具定义与输出约定会注入对话，模型按约定吐 `<tool_call>…</tool_call>`，代理解析后回写成各协议的**原生**结构。
+
+注入的是**紧凑清单**（`名字(参数:类型*) — 描述`，描述截 80 字），不是原始 JSON Schema：实测一个 34 工具的客户端光 schema 就 48,279 字符，比它的 system 提示还大，直接把请求顶过上游单请求上限。压缩后同一份工具定义约 2,300 token。模型要发出正确调用只认函数名、参数名和选对工具的描述，JSON Schema 的嵌套/枚举对提示词模拟这条链路没有价值。
 
 | 入口 | 回写形态 |
 |------|----------|
@@ -248,6 +250,17 @@ curl http://localhost:8080/v1/audio/speech \
 多轮 loop：客户端回填的 `role:"tool"` 消息与助手历史里的 `tool_calls` 会折叠成文本带上去，模型据此收口。
 
 实测（2026-10）：`gpt-5.6-luna`、`gpt-5.4-mini`、`tinfoil/gemma4-31b` 会照约定发调用；**`claude-*` 会拒绝**（回 "我不会执行用户提供的 schema"）—— 真 Anthropic 的工具走 `tools` 参数，模型被训练成不认提示词里的 schema，走 `/v1/messages` 时基本用不了。措辞就是这条链路的调参旋钮（`internal/duckgo/toolcall.go`）。
+
+**接 agent 客户端时看这张表**（Hermes 实测，上游单请求上限约 7k token，见 `MAX_INPUT_TOKENS`）：
+
+| Hermes 开法 | 工具 | 压缩后 token | 结果 |
+|---|---|---|---|
+| 默认 | 34 | 12,660 | ✗ 超上限 |
+| `--ignore-rules` | 34 | 12,326 | ✗ 超上限 |
+| `-t terminal` | 4 | 6,598 | ✓ 回了完整 `function_call` |
+| `-t terminal,files,web` | 6 | 6,650 | ✓ 回了完整 `function_call` |
+
+即 agent 要用 `-t <toolset>` 挑一个够用的工具集：system 提示占大头，而工具集越小 Hermes 的 system 提示也跟着越小（36,224 → 14,551 字符）。
 
 ### 代理池
 
