@@ -49,6 +49,20 @@ func TestResponseInputFoldsToolCallHistory(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("got %d messages: %+v", len(msgs), msgs)
 	}
+	// 自定义工具的两轮：custom_tool_call 带原文 + custom_tool_call_output
+	custom := responseInputMessages([]interface{}{
+		map[string]interface{}{"type": "custom_tool_call", "call_id": "c1", "name": "exec", "input": "text(await tools.exec_command({cmd:\"date\"}))"},
+		map[string]interface{}{"type": "custom_tool_call_output", "call_id": "c1", "output": "Thu Oct 8"},
+	})
+	if len(custom) != 2 {
+		t.Fatalf("custom 历史折叠丢东西: %+v", custom)
+	}
+	if custom[0].Role != "assistant" || !strings.Contains(custom[0].Content.(string), "exec_command") {
+		t.Fatalf("custom_tool_call 没留住原文: %+v", custom[0])
+	}
+	if custom[1].Role != "tool" || custom[1].Content != "Thu Oct 8" {
+		t.Fatalf("custom_tool_call_output 没留住: %+v", custom[1])
+	}
 	if msgs[0].Role != "user" {
 		t.Fatalf("[0] role = %q", msgs[0].Role)
 	}
@@ -66,6 +80,48 @@ func TestResponseInputFoldsToolCallHistory(t *testing.T) {
 	})
 	if len(obj) != 1 || !strings.Contains(obj[0].Content.(string), "cmd") {
 		t.Fatalf("对象参数未回退序列化: %+v", obj)
+	}
+}
+
+// Codex CLI 不发顶层 tools —— 工具藏在 input 的 additional_tools 项里，还套 namespace。
+// 只读顶层字段就没工具可用；custom 类型还要一路带到回写那一步。
+func TestCollectedToolsFromAdditionalTools(t *testing.T) {
+	req := ResponseAPIRequest{
+		Model: "gpt-5.6-luna",
+		Input: []interface{}{
+			map[string]interface{}{
+				"type": "additional_tools", "role": "developer",
+				"tools": []interface{}{map[string]interface{}{
+					"type": "namespace", "name": "functions",
+					"tools": []interface{}{
+						map[string]interface{}{"type": "custom", "name": "exec", "description": "Run JavaScript",
+							"format": map[string]interface{}{"type": "grammar", "syntax": "lark", "definition": "SOURCE: /[\\s\\S]+/"}},
+						map[string]interface{}{"type": "function", "name": "wait",
+							"parameters": map[string]interface{}{"type": "object",
+								"properties": map[string]interface{}{"cell_id": map[string]interface{}{"type": "string"}},
+								"required":   []interface{}{"cell_id"}}},
+					}}},
+			},
+			map[string]interface{}{"type": "message", "role": "user", "content": "run ls"},
+		},
+	}
+
+	tools := req.CollectedTools()
+	if len(tools) != 2 {
+		t.Fatalf("got %d tools: %+v", len(tools), tools)
+	}
+	if got := req.CustomToolNames(); len(got) != 1 || got[0] != "exec" {
+		t.Fatalf("custom names = %v", got)
+	}
+
+	chat := req.ToChatCompletionRequest()
+	if chat.Tools == nil || len(chat.CustomTools) != 1 {
+		t.Fatalf("透传失败: tools=%v custom=%v", chat.Tools, chat.CustomTools)
+	}
+	// 顶层 tools 照旧也要收（Hermes codex_responses 走这条路）
+	top := ResponseAPIRequest{Model: "m", Tools: []interface{}{map[string]interface{}{"type": "function", "name": "terminal"}}}
+	if len(top.CollectedTools()) != 1 {
+		t.Fatal("顶层 tools 丢了")
 	}
 }
 

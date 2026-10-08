@@ -261,6 +261,7 @@ func (h *Handler) responses(c *gin.Context) {
 	stats := duckgo.HandlerStats{
 		Start:        start,
 		Tools:        chatRequest.Tools != nil,
+		CustomTools:  duckgo.CustomToolSet(chatRequest.CustomTools),
 		PromptTokens: inputTokens,
 		CachedTokens: cachedTokens,
 		Effort:       effort,
@@ -289,7 +290,7 @@ func (h *Handler) responses(c *gin.Context) {
 	)
 	// 模型要调工具: output 换成 function_call 项, output_text 置空(与上游 Responses API 一致)。
 	if len(result.ToolCalls) > 0 {
-		completed.Output = duckgo.ResponsesToolCalls(result.ToolCalls)
+		completed.Output = duckgo.ResponsesToolCalls(result.ToolCalls, stats.CustomTools)
 		completed.OutputText = ""
 	}
 	c.JSON(http.StatusOK, completed)
@@ -449,7 +450,7 @@ func handleResponsesStream(c *gin.Context, body io.ReadCloser, model string, sta
 	}
 	if len(toolCalls) > 0 {
 		completed := officialtypes.NewResponseAPIFull("", model, int64(stats.PromptTokens), int64(outputTokens), int64(stats.CachedTokens), ttftMs, totalMs, stats.Effort)
-		completed.Output = duckgo.ResponsesToolCalls(toolCalls)
+		completed.Output = duckgo.ResponsesToolCalls(toolCalls, stats.CustomTools)
 		for i := range completed.Output {
 			writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.output_item.added", Sequence: 0, OutputIndex: i, Item: &completed.Output[i]})
 			writeRespEvent(c, officialtypes.ResponseStreamEvent{Type: "response.output_item.done", Sequence: 0, OutputIndex: i, Item: &completed.Output[i]})

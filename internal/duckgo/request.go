@@ -366,6 +366,20 @@ type HandlerStats struct {
 	Effort       string
 	// Tools 表示本次请求带了工具定义, 需要走闸门判定模型是否要调工具。
 	Tools bool
+	// CustomTools 是自由格式工具名的集合: 回写 Responses 时它们要是 custom_tool_call。
+	CustomTools map[string]bool
+}
+
+// CustomToolSet 把名字列表转成查表用的集合。
+func CustomToolSet(names []string) map[string]bool {
+	if len(names) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return set
 }
 
 // StreamResult is what Handler returns: the full text plus output-side telemetry.

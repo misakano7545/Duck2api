@@ -30,16 +30,21 @@ type ToolCall struct {
 }
 
 // ToolInstruction 生成注入 system 的工具说明与输出约定。
-func ToolInstruction(toolsDoc string) string {
+func ToolInstruction(toolsDoc string, hasCustom bool) string {
 	// 措辞要点(踩过的坑): 只说 "你可以调用下列工具" 会被 claude 系模型当成越权注入而拒绝
 	// (回 "工具列表与我的系统提示不符"); 必须点明这是本次 API 调用的线格式约定、
 	// 函数由客户端注册、执行方是客户端。改措辞就是这条链路的调参旋钮。
-	return "【API 线格式约定】本次请求由客户端程序发出, 下列函数由客户端注册, 由客户端执行。\n" +
+	doc := "【API 线格式约定】本次请求由客户端程序发出, 下列函数由客户端注册, 由客户端执行。\n" +
 		"你内置的搜索等能力与本约定无关; 当用户的话需要这些函数的数据才能回答, 或用户点名要求调用时, " +
 		"你必须只输出下面这一行(可多行表示并行调用), 不要解释、不要直接凭自己回答、不要写成代码块:\n" +
 		toolCallOpen + `{"name":"函数名","arguments":{参数}}` + toolCallClose + "\n" +
-		"客户端会执行它并把结果回传给你。若问题完全不需要这些函数, 正常回答即可。\n\n" +
-		"客户端注册的函数:\n" + toolsDoc
+		"客户端会执行它并把结果回传给你。若问题完全不需要这些函数, 正常回答即可。\n"
+	if hasCustom {
+		// Codex 的 exec 这类工具没有 JSON Schema: 它的入参是原始文本(JS 源码)。
+		doc += "标着 [原始文本输入] 的工具没有参数表, 把要发给它的原文整个放进 arguments 的 " +
+			"input 字段(字符串), 例如 " + toolCallOpen + `{"name":"exec","arguments":{"input":"const r = await tools.exec_command({cmd:\"date\"}); text(r)"}}` + toolCallClose + "\n"
+	}
+	return doc + "\n客户端注册的函数:\n" + toolsDoc
 }
 
 // 工具块是注入提示词里最大的一块, 而它整个是我们自己造的。实测一个 34 工具的客户端
@@ -48,14 +53,16 @@ func ToolInstruction(toolsDoc string) string {
 // 选对工具的描述。所以按 `名字(参数:类型) — 描述` 压成一行一个, 其余的 JSON Schema
 // 细节(嵌套、枚举、additionalProperties…)对提示词模拟这条链路没有价值。
 const (
-	toolLineDescLimit = 80   // 每个工具描述保留多少字符
-	toolDocCharLimit  = 8000 // 整块上限, 超了后面的工具只留名字
+	toolLineDescLimit  = 80  // 每个工具描述保留多少字符
+	customDescLimit    = 400 // 自由格式工具没有参数表, 描述就是它唯一的 API 文档, 多留些
+	toolDocCharLimit   = 8000
 )
 
 // CompactToolList 把客户端的三种 tools 形状压成紧凑清单。
 // chat/OpenAI 是 {type,function:{name,parameters}}, responses 是平铺的
-// {type,name,parameters}, anthropic 是 {name,input_schema}。认不出的形状原样退回
-// JSON —— 宁可没省下体积, 也不要丢工具。
+// {type,name,parameters}, anthropic 是 {name,input_schema}, 另有 {type:"custom"}
+// 这种没有参数表的自由格式工具(Codex 的 exec)。认不出的形状原样退回 JSON ——
+// 宁可没省下体积, 也不要丢工具。
 func CompactToolList(tools interface{}) string {
 	if tools == nil {
 		return ""
@@ -82,18 +89,30 @@ func CompactToolList(tools interface{}) string {
 		if name == "" {
 			continue
 		}
-		schema, _ := fn["parameters"].(map[string]interface{})
-		if schema == nil {
-			schema, _ = fn["input_schema"].(map[string]interface{})
+		custom, _ := fn["type"].(string)
+		isCustom := custom == "custom"
+
+		var line string
+		if isCustom {
+			line = name + "[原始文本输入]"
+		} else {
+			schema, _ := fn["parameters"].(map[string]interface{})
+			if schema == nil {
+				schema, _ = fn["input_schema"].(map[string]interface{})
+			}
+			line = name + compactParams(schema)
 		}
-		line := name + compactParams(schema)
 
 		if sb.Len() >= toolDocCharLimit {
 			sb.WriteString(fmt.Sprintf("\n(其余 %d 个工具因上游输入上限省略, 名字: %s)", len(list)-i, name))
 			break
 		}
+		limit := toolLineDescLimit
+		if isCustom {
+			limit = customDescLimit
+		}
 		if desc, _ := fn["description"].(string); desc != "" {
-			line += " — " + truncateRunes(strings.Join(strings.Fields(desc), " "), toolLineDescLimit)
+			line += " — " + truncateRunes(strings.Join(strings.Fields(desc), " "), limit)
 		}
 		sb.WriteString(line)
 		sb.WriteString("\n")
@@ -193,23 +212,46 @@ func OfficialToolCalls(calls []ToolCall) []officialtypes.ToolCallChunk {
 	return out
 }
 
-// ResponsesToolCalls 把解析出的调用转成 Responses API 的 function_call 输出项。
+// ResponsesToolCalls 把解析出的调用转成 Responses API 的输出项。
+// 自由格式工具(custom, 如 Codex 的 exec)要回成 custom_tool_call + input(原始文本,
+// 不是 JSON 参数) —— 客户端按 item 类型分派, 回成 function_call 它不认。
 // ponytail: 整块一次性给出, 不发 function_call_arguments.delta —— 与 chat 路径
-// 「工具调用不分片」同一取舍(见 OfficialToolCalls 上方注释)。
-func ResponsesToolCalls(calls []ToolCall) []officialtypes.ResponseOutput {
+// 「工具调用不分块」同一取舍(见 OfficialToolCalls 上方注释)。
+func ResponsesToolCalls(calls []ToolCall, custom map[string]bool) []officialtypes.ResponseOutput {
 	out := make([]officialtypes.ResponseOutput, 0, len(calls))
 	for _, call := range calls {
 		id := util.RandomHexadecimalString()
-		out = append(out, officialtypes.ResponseOutput{
-			ID:        "fc_" + id,
-			Type:      "function_call",
-			Status:    "completed",
-			CallID:    "call_" + id,
-			Name:      call.Name,
-			Arguments: call.Arguments,
-		})
+		item := officialtypes.ResponseOutput{
+			ID:     id,
+			Status: "completed",
+			Name:   call.Name,
+			CallID: "call_" + id,
+		}
+		if custom[call.Name] {
+			item.Type = "custom_tool_call"
+			item.ID = "ctc_" + id
+			item.Input = customToolInput(call.Arguments)
+		} else {
+			item.Type = "function_call"
+			item.ID = "fc_" + id
+			item.Arguments = call.Arguments
+		}
+		out = append(out, item)
 	}
 	return out
+}
+
+// customToolInput 从约定里取的 arguments 拆出原始文本。
+// 约定让模型写 {"input":"<原文>"}; 拿不到(模型直接吐了原文)就原样返回 arguments 文本,
+// 总比回一个空 input 让客户端执行空脚本强。
+func customToolInput(arguments string) string {
+	var envelope struct {
+		Input string `json:"input"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &envelope); err == nil && envelope.Input != "" {
+		return envelope.Input
+	}
+	return arguments
 }
 
 // StreamGate 边收边发的闸门。契约要求"调用工具时输出以 <tool_call> 开头",

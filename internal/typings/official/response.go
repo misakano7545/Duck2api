@@ -201,6 +201,8 @@ type ResponseOutput struct {
 	CallID    string                  `json:"call_id,omitempty"`
 	Name      string                  `json:"name,omitempty"`
 	Arguments string                  `json:"arguments,omitempty"`
+	// Input 是自定义工具（custom_tool_call）的原始文本入参；function_call 不用它。
+	Input string `json:"input,omitempty"`
 }
 
 type ResponseOutputContent struct {
