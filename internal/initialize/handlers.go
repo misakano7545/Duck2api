@@ -310,11 +310,9 @@ func (h *Handler) startDuckDuckGoRequest(originalRequest officialtypes.APIReques
 
 	// 上游单请求上限是硬的（≈4k token，见 fit.go）：在这里一次把三条入站路（chat /
 	// responses / messages）都管住，别让请求白白打到上游再吃一个 67s 的 429。
-	if dropped, ok := duckgoConvert.FitToUpstreamLimit(&translatedRequest); !ok {
+	// 计数与丢弃明细由 fit.go 自己落日志。
+	if _, ok := duckgoConvert.FitToUpstreamLimit(&translatedRequest); !ok {
 		return duckgotypes.ApiRequest{}, nil, duckgo.ErrInputTooLarge
-	} else if dropped > 0 {
-		log.Printf("[FIT] 上游输入上限 %d token，丢弃 %d 条旧历史（保留首条与最新几条）",
-			duckgoConvert.MaxInputTokens(), dropped)
 	}
 
 	// Debug: log request

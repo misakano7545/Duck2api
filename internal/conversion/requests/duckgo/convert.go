@@ -113,6 +113,9 @@ func ConvertAPIRequestWithOptions(apiRequest officialtypes.APIRequest, reasoning
 				duckgoRequest.AddMessageWithParts("user", parts)
 			}
 			inserted = true
+			// 注入的是工具能力本身，不是历史：上限守卫必须跳过它，否则一触发裁剪
+			// 就把工具定义丢掉，模型只会回「没有可用的终端工具」（实测踩到过）。
+			duckgoRequest.KeepPrefix = duckgoRequest.MessageCount()
 		}
 		role := message.Role
 		content := message.Content
@@ -147,6 +150,7 @@ func ConvertAPIRequestWithOptions(apiRequest officialtypes.APIRequest, reasoning
 		if parts := extractContentParts(toolInstruction); len(parts) > 0 {
 			duckgoRequest.AddMessageWithParts("user", parts)
 		}
+		duckgoRequest.KeepPrefix = duckgoRequest.MessageCount()
 	}
 	ds := newDurableStream()
 	duckgoRequest.DurableStream = &ds

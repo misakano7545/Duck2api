@@ -77,6 +77,34 @@ func TestFitRefusesWhenFirstMessageAloneTooBig(t *testing.T) {
 	}
 }
 
+// 工具约定注入占的位（KeepPrefix）绝不能被当成旧历史丢掉 —— 丢了模型就回
+// 「没有可用的终端工具」。实测就是在 agent 形状的请求上踩到：裁剪正好吃掉中间那条注入。
+func TestFitNeverDropsProtectedToolInstruction(t *testing.T) {
+	t.Setenv("MAX_INPUT_TOKENS", "200")
+	req := build(20, 40, 100, 100) // [system, 工具约定, 旧历史, 最新]
+	req.KeepPrefix = 2
+	instruction := req.MessageText(1)
+	last := req.MessageText(3)
+
+	dropped, ok := FitToUpstreamLimit(&req)
+	if !ok || dropped != 1 {
+		t.Fatalf("dropped=%d ok=%v，期望丢 1 条旧历史", dropped, ok)
+	}
+	if req.MessageCount() != 3 || req.MessageText(1) != instruction {
+		t.Fatal("工具约定被丢了")
+	}
+	if req.MessageText(2) != last {
+		t.Fatal("最新的一条被丢了")
+	}
+
+	// 受保护的前缀自己就超限：拒绝（不截断），别把工具定义拆一半
+	over := build(150, 150, 10)
+	over.KeepPrefix = 2
+	if _, ok := FitToUpstreamLimit(&over); ok {
+		t.Fatal("前缀超限应当拒绝")
+	}
+}
+
 // 单条消息就超限（n==1）同样拒绝，别把自己压成空请求。
 func TestFitRefusesSingleOversizedMessage(t *testing.T) {
 	t.Setenv("MAX_INPUT_TOKENS", "20")

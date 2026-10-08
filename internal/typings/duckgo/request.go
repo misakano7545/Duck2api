@@ -99,6 +99,10 @@ type ApiRequest struct {
 	// DurableStream 指针 + omitempty：原生图片模型（image-generation）不接受它，
 	// 实测带上空的 durableStream 与不带是两条路（duckmind/p2d-duck 对出图也单独省掉它）。
 	DurableStream *DurableStream `json:"durableStream,omitempty"`
+	// KeepPrefix 是必须留在最前面的消息条数 —— 工具约定注入占的位。
+	// 上限守卫（conversion/requests/duckgo/fit.go）只从它之后开始丢：那是工具能力本身，
+	// 不是可以牺牲的旧历史，丢了模型就会回「没有可用的终端工具」。
+	KeepPrefix int `json:"-"`
 }
 
 func (a *ApiRequest) AddMessage(role string, content string) {
