@@ -251,16 +251,39 @@ curl http://localhost:8080/v1/audio/speech \
 
 实测（2026-10）：`gpt-5.6-luna`、`gpt-5.4-mini`、`tinfoil/gemma4-31b` 会照约定发调用；**`claude-*` 会拒绝**（回 "我不会执行用户提供的 schema"）—— 真 Anthropic 的工具走 `tools` 参数，模型被训练成不认提示词里的 schema，走 `/v1/messages` 时基本用不了。措辞就是这条链路的调参旋钮（`internal/duckgo/toolcall.go`）。
 
-**接 agent 客户端时看这张表**（Hermes 实测，上游单请求上限约 7k token，见 `MAX_INPUT_TOKENS`）：
+**接 agent 客户端**（三个都实测跑通了原生工具调用，工具定义都走提示词模拟）：
 
-| Hermes 开法 | 工具 | 压缩后 token | 结果 |
-|---|---|---|---|
-| 默认 | 34 | 12,660 | ✗ 超上限 |
-| `--ignore-rules` | 34 | 12,326 | ✗ 超上限 |
-| `-t terminal` | 4 | 6,598 | ✓ 回了 `function_call` |
-| `-t terminal,file,web` | 10 | 6,793 | ✓ 回了 `function_call`，云端端到端跑通 |
+| 客户端 | 要点 | 实测 |
+|---|---|---|
+| **Hermes** | `hermes chat -t terminal,file,web` | 执行 `date`，回报真实时间 |
+| **Codex CLI** | `codex exec -c features.skip_host_skill_discovery=true` | 执行 `ls -a .`，回报真实文件列表 |
+| **DeepSeek Harness** | 只需一个 provider patch（见下），无需改网关 | 调 `bash {command:"date"}`，还自己纠正了一次参数校验错误 |
 
-即 agent 要用 `-t <toolset>` 挑一个够用的工具集：system 提示占大头，而工具集越小 Hermes 的 system 提示也跟着越小（36,224 → 14,551 字符）。工具集名取自 Hermes 的 `toolsets.TOOLSETS`（`file` 是单数，写 `files` 会被静默忽略）。
+三者的请求体积都贴着上游上限，所以各自的「瘦身开关」是必须的：
+
+- **Hermes**：`-t <toolset>` 挑工具集。system 提示占大头，而工具集越小 Hermes 的 system 提示也跟着越小（36,224 → 14,551 字符）。工具集名取自 `toolsets.TOOLSETS`（`file` 是单数）。实测：默认 34 工具 12,660 token ✗ / `-t terminal,file,web` 10 工具 6,793 ✓。
+- **Codex**：`-c features.skip_host_skill_discovery=true` 关掉 host 技能目录 —— 光那个目录（29 个技能）就 14.7k 字符。带上后请求 7,615 token（`MAX_INPUT_TOKENS` 默认 7,500，会裁掉 1 条旧历史，不影响）。
+- **dsh**：默认就很瘦，不用开关。
+
+dsh 的 provider patch（`dsh --patch`）：
+
+```yaml
+- id: llm-pi-ai
+  config:
+    providers:
+      duckapi:
+        baseURL: https://<你的实例>/v1
+        apiKeyEnv: DUCKAPI_KEY
+        api: openai-completions      # 也可 openai-responses / anthropic-messages
+        models:
+          - id: gpt-5.6-luna
+- id: agent-default-model
+  config:
+    provider: duckapi
+    model: gpt-5.6-luna
+```
+
+**Codex 的工具通道是特殊的**：它不发顶层 `tools`，而是把工具塞在 `input` 里一个 `type:"additional_tools"` 的项里（外面套 `type:"namespace"`）；其中 `exec` 是 `type:"custom"`（入参为裸 JS 源码、没有 JSON Schema），网关按 `[原始文本输入]` 处理，回写时回成 `custom_tool_call` + `input` 而不是 `function_call`。
 
 ### 代理池
 
