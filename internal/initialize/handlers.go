@@ -297,9 +297,9 @@ func (h *Handler) responses(c *gin.Context) {
 }
 
 func (h *Handler) startDuckDuckGoRequest(originalRequest officialtypes.APIRequest) (duckgotypes.ApiRequest, *http.Response, error) {
-	proxyUrl := h.proxy.GetProxyIP()
+	ident := h.proxy.GetIdentity()
 	client := resty.NewStdClient()
-	token, err := duckgo.InitXVQD(client, proxyUrl)
+	token, err := duckgo.InitXVQD(client, ident.Proxy, ident.UA)
 	if err != nil {
 		return duckgotypes.ApiRequest{}, nil, err
 	}
@@ -320,7 +320,7 @@ func (h *Handler) startDuckDuckGoRequest(originalRequest officialtypes.APIReques
 	reqJSON, _ := json.Marshal(translatedRequest)
 	log.Printf("[DEBUG] DuckDuckGo request: %s", truncateStr(string(reqJSON), 2000))
 
-	response, err := duckgo.POSTconversation(client, translatedRequest, token, proxyUrl)
+	response, err := duckgo.POSTconversation(client, translatedRequest, token, ident.Proxy, ident.UA)
 	if err != nil {
 		return duckgotypes.ApiRequest{}, nil, err
 	}
@@ -559,9 +559,9 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 		translatedRequest.Metadata.ToolChoice.GenerateImage = true
 	}
 
-	proxyUrl := h.proxy.GetProxyIP()
+	ident := h.proxy.GetIdentity()
 	client := resty.NewStdClient()
-	token, err := duckgo.InitXVQD(client, proxyUrl)
+	token, err := duckgo.InitXVQD(client, ident.Proxy, ident.UA)
 	if err != nil {
 		c.JSON(upstreamStatus(c, err), gin.H{"error": gin.H{
 			"message": "Failed to initialize VQD token",
@@ -571,7 +571,7 @@ func (h *Handler) imageGenerations(c *gin.Context) {
 		return
 	}
 
-	response, err := duckgo.POSTconversation(client, translatedRequest, token, proxyUrl)
+	response, err := duckgo.POSTconversation(client, translatedRequest, token, ident.Proxy, ident.UA)
 	if err != nil {
 		c.JSON(500, gin.H{"error": gin.H{
 			"message": "Failed to generate image",
@@ -764,9 +764,9 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, imageB64 string) {
 		{Type: "text", Text: duckgo.StrictImagePrompt(prompt)},
 	})
 
-	proxyUrl := h.proxy.GetProxyIP()
+	ident := h.proxy.GetIdentity()
 	client := resty.NewStdClient()
-	token, err := duckgo.InitXVQD(client, proxyUrl)
+	token, err := duckgo.InitXVQD(client, ident.Proxy, ident.UA)
 	if err != nil {
 		c.JSON(upstreamStatus(c, err), gin.H{"error": gin.H{
 			"message": "Failed to initialize VQD token",
@@ -776,7 +776,7 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, imageB64 string) {
 		return
 	}
 
-	response, err := duckgo.POSTconversation(client, nativeReq, token, proxyUrl)
+	response, err := duckgo.POSTconversation(client, nativeReq, token, ident.Proxy, ident.UA)
 	if err != nil {
 		c.JSON(500, gin.H{"error": gin.H{
 			"message": "Failed to edit image",
@@ -829,7 +829,7 @@ func (h *Handler) doImageEdit(c *gin.Context, prompt string, imageB64 string) {
 }
 
 func (h *Handler) engines(c *gin.Context) {
-	models, statusCode, err := fetchDuckDuckGoModels(h.proxy.GetProxyIP())
+	models, statusCode, err := fetchDuckDuckGoModels(h.proxy.GetIdentity())
 	if err != nil {
 		c.JSON(statusCode, gin.H{"error": gin.H{
 			"message": err.Error(),

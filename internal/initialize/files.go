@@ -242,15 +242,15 @@ func (h *Handler) audioTranscriptions(c *gin.Context) {
 }
 
 func (h *Handler) callDictation(audioBytes []byte, contentType string) (string, error) {
-	proxyUrl := h.proxy.GetProxyIP()
+	ident := h.proxy.GetIdentity()
 	client := resty.NewStdClient()
-	if proxyUrl != "" {
-		client.SetProxy(proxyUrl)
+	if ident.Proxy != "" {
+		client.SetProxy(ident.Proxy)
 	}
 
 	maxRetries := 3
 	for i := 0; i <= maxRetries; i++ {
-		token, err := duckgo.InitXVQD(client, proxyUrl)
+		token, err := duckgo.InitXVQD(client, ident.Proxy, ident.UA)
 		if err != nil {
 			return "", fmt.Errorf("failed to init VQD: %w", err)
 		}
@@ -260,12 +260,12 @@ func (h *Handler) callDictation(audioBytes []byte, contentType string) (string, 
 		header.Set("accept", "application/json")
 		header.Set("origin", "https://duck.ai")
 		header.Set("referer", "https://duck.ai/")
-		header.Set("user-agent", duckgo.UA)
+		header.Set("user-agent", ident.UA)
 		header.Set("x-vqd-hash-1", token)
 		header.Set("x-ddg-journey-id", duckgo.RandomHex(16))
 		header.Set("x-fe-signals", duckgo.CreateFESignals())
 
-		if feVersion, err := duckgo.InitFEVersion(client, ""); err == nil && feVersion != "" {
+		if feVersion, err := duckgo.InitFEVersion(client, "", ident.UA); err == nil && feVersion != "" {
 			header.Set("x-fe-version", feVersion)
 		}
 

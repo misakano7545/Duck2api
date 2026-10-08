@@ -114,14 +114,16 @@ func (h *Handler) audioSpeech(c *gin.Context) {
 }
 
 func (h *Handler) generateSpeechWebRTC(text string, voice string) ([]byte, error) {
-	proxyUrl := h.proxy.GetProxyIP()
+	// 整个 TTS 会话(ice-servers / session)必须用同一个身份: 它内部的 UA 与出口
+	// 要一致, 身份不一致时上游会直接 403 ERR_SEQUENCE_VIOLATION。
+	ident := h.proxy.GetIdentity()
 	client := resty.NewStdClient()
-	if proxyUrl != "" {
-		client.SetProxy(proxyUrl)
+	if ident.Proxy != "" {
+		client.SetProxy(ident.Proxy)
 	}
 
 	// Step 1: Get ICE servers
-	iceServers, err := h.getICEServers(client, proxyUrl)
+	iceServers, err := h.getICEServers(client, ident.Proxy, ident.UA)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ICE servers: %w", err)
 	}
@@ -260,7 +262,7 @@ func (h *Handler) generateSpeechWebRTC(text string, voice string) ([]byte, error
 	}
 
 	// Step 7: Send SDP offer to Duck.ai session endpoint
-	sdpAnswer, err := h.sendSDPOffer(client, proxyUrl, offer.SDP)
+	sdpAnswer, err := h.sendSDPOffer(client, ident.Proxy, ident.UA, offer.SDP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send SDP offer: %w", err)
 	}
@@ -305,12 +307,12 @@ func (h *Handler) generateSpeechWebRTC(text string, voice string) ([]byte, error
 	return oggData, nil
 }
 
-func (h *Handler) getICEServers(client httpclient.AuroraHttpClient, proxyUrl string) ([]struct {
+func (h *Handler) getICEServers(client httpclient.AuroraHttpClient, proxyUrl string, ua string) ([]struct {
 	URLs       []string `json:"urls"`
 	Username   string   `json:"username,omitempty"`
 	Credential string   `json:"credential,omitempty"`
 }, error) {
-	token, err := duckgo.InitXVQD(client, proxyUrl)
+	token, err := duckgo.InitXVQD(client, proxyUrl, ua)
 	if err != nil {
 		return nil, err
 	}
@@ -321,11 +323,11 @@ func (h *Handler) getICEServers(client httpclient.AuroraHttpClient, proxyUrl str
 	header.Set("referer", "https://duck.ai/")
 	// 必须与 sendSDPOffer 用同一个 UA: 语音会话的两个请求(ice-servers / session)
 	// 身份不一致时上游会直接 403 ERR_SEQUENCE_VIOLATION。
-	header.Set("user-agent", duckgo.UA)
+	header.Set("user-agent", ua)
 	header.Set("x-vqd-hash-1", token)
 	header.Set("x-ddg-journey-id", duckgo.RandomHex(16))
 	header.Set("x-fe-signals", duckgo.CreateFESignals())
-	if feVersion, err := duckgo.InitFEVersion(client, ""); err == nil && feVersion != "" {
+	if feVersion, err := duckgo.InitFEVersion(client, "", ua); err == nil && feVersion != "" {
 		header.Set("x-fe-version", feVersion)
 	}
 
@@ -348,11 +350,11 @@ func (h *Handler) getICEServers(client httpclient.AuroraHttpClient, proxyUrl str
 	return result.ICEServers, nil
 }
 
-func (h *Handler) sendSDPOffer(client httpclient.AuroraHttpClient, proxyUrl string, sdp string) (string, error) {
+func (h *Handler) sendSDPOffer(client httpclient.AuroraHttpClient, proxyUrl string, ua string, sdp string) (string, error) {
 	// Retry loop for VQD challenge
 	maxRetries := 3
 	for i := 0; i <= maxRetries; i++ {
-		token, err := duckgo.InitXVQD(client, proxyUrl)
+		token, err := duckgo.InitXVQD(client, proxyUrl, ua)
 		if err != nil {
 			return "", err
 		}
@@ -362,11 +364,11 @@ func (h *Handler) sendSDPOffer(client httpclient.AuroraHttpClient, proxyUrl stri
 		header.Set("accept", "*/*")
 		header.Set("origin", "https://duck.ai")
 		header.Set("referer", "https://duck.ai/")
-		header.Set("user-agent", duckgo.UA)
+		header.Set("user-agent", ua)
 		header.Set("x-vqd-hash-1", token)
 		header.Set("x-ddg-journey-id", duckgo.RandomHex(16))
 		header.Set("x-fe-signals", duckgo.CreateFESignals())
-		if feVersion, err := duckgo.InitFEVersion(client, ""); err == nil && feVersion != "" {
+		if feVersion, err := duckgo.InitFEVersion(client, "", ua); err == nil && feVersion != "" {
 			header.Set("x-fe-version", feVersion)
 		}
 

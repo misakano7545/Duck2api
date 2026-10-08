@@ -285,7 +285,7 @@ dsh 的 provider patch（`dsh --patch`）：
 
 **Codex 的工具通道是特殊的**：它不发顶层 `tools`，而是把工具塞在 `input` 里一个 `type:"additional_tools"` 的项里（外面套 `type:"namespace"`）；其中 `exec` 是 `type:"custom"`（入参为裸 JS 源码、没有 JSON Schema），网关按 `[原始文本输入]` 处理，回写时回成 `custom_tool_call` + `input` 而不是 `function_call`。
 
-### 代理池
+### 代理池与客户端指纹
 
 支持 `proxies.txt` 文件配置多个代理（每行一个）：
 
@@ -294,6 +294,27 @@ http://proxy1:8080
 http://proxy2:8080
 socks5://proxy3:1080
 ```
+
+**每个出口自动配一个不同的 UA 指纹**（按行号轮转分配，池子在 `internal/duckgo/ua.go`）。
+上游按「出口 IP + 客户端指纹」限速，身份之间复用 UA 等于没换身份。
+
+- 指纹池只有 **5 个 UA**（Chrome 144/145/146 × Linux/macOS），只有 Linux/macOS 的 Chrome UA 会被
+  接受：Windows 的 UA 一律 `418 ERR_CHALLENGE`，TLS 指纹伪装客户端（OkHttp/Chrome_146/Firefox/
+  Safari profile）也一律被拒（实测 2026-10）。所以身份多于 5 个时 UA 循环复用，但 (出口 IP, UA)
+  组合仍然唯一。出口指纹里唯一能按身份变的就是这个 UA 串。
+- 一个指纹里三处必须自洽：请求头 `user-agent`、`sec-ch-ua` / `sec-ch-ua-platform`、挑战脚本里的
+  `navigator.userAgent`。客户端提示由 UA 反推（`chromeHints`），不另维护一张表 —— 两份来源打架
+  就是 418 的成因。
+- **没有代理（直连）时每次启动随机一个指纹**：上限按指纹计，重启即换额度。要固定就设
+  `X_USER_AGENT`（设了则所有身份共用这一个）。
+- 启动时打 `identity` 日志行，换没换指纹看得见。
+
+实测（2026-10）：池内 5 个 UA 逐个真打上游 **5/5 通过**；直连连起 8 次抽到 **4 个不同指纹**；
+5 身份轮转连发 7 次 **7/7 = 200，日志 0 次 418/429**（含 Linux↔macOS 回切）。
+
+> `duckgo.Token` 仍是全局单例，没有按身份隔离。实测同一出口 5 个身份轮转不串号（模式见上），
+> 所以没加「每身份一份 token」的开销；**跨出口 IP 是否同样成立没测过**（手上没有节点）。
+> 真机上出现「418 + 身份切换」同现时，这里是第一个要看的地方。
 
 ## 鸣谢
 

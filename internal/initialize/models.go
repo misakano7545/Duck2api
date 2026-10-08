@@ -4,6 +4,7 @@ import (
 	"aurora/internal/duckgo"
 	"aurora/internal/httpclient"
 	"aurora/internal/httpclient/resty"
+	"aurora/internal/proxys"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,10 +35,10 @@ type openAIModelsResponse struct {
 	Data   []openAIModel `json:"data"`
 }
 
-func fetchDuckDuckGoModels(proxyURL string) (openAIModelsResponse, int, error) {
+func fetchDuckDuckGoModels(ident proxys.Identity) (openAIModelsResponse, int, error) {
 	client := resty.NewStdClient()
-	if proxyURL != "" {
-		if err := client.SetProxy(proxyURL); err != nil {
+	if ident.Proxy != "" {
+		if err := client.SetProxy(ident.Proxy); err != nil {
 			return openAIModelsResponse{}, http.StatusBadGateway, fmt.Errorf("configure models proxy: %w", err)
 		}
 	}
@@ -46,7 +47,7 @@ func fetchDuckDuckGoModels(proxyURL string) (openAIModelsResponse, int, error) {
 	headers.Set("accept", "application/json")
 	headers.Set("origin", "https://duck.ai")
 	headers.Set("referer", "https://duck.ai/")
-	headers.Set("user-agent", duckgo.UA)
+	headers.Set("user-agent", ident.UA)
 
 	response, err := client.Request(httpclient.GET, duckDuckGoModelsURL, headers, nil, nil)
 	if err != nil {

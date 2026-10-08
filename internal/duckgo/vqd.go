@@ -24,22 +24,25 @@ import (
 )
 
 const (
-	defaultVQDUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
-	defaultVQDStack     = "Error\nat l (https://duck.ai/dist/duckai-dist/entry.duckai.c0a8c794abcbc8ee2d3c.js:2:1446307)\nat async https://duck.ai/dist/duckai-dist/entry.duckai.c0a8c794abcbc8ee2d3c.js:2:1294181"
-	defaultVQDOrigin    = "https://duck.ai"
+	defaultVQDStack  = "Error\nat l (https://duck.ai/dist/duckai-dist/entry.duckai.c0a8c794abcbc8ee2d3c.js:2:1446307)\nat async https://duck.ai/dist/duckai-dist/entry.duckai.c0a8c794abcbc8ee2d3c.js:2:1294181"
+	defaultVQDOrigin = "https://duck.ai"
 )
 
 // GenerateVQDHash 根据服务端返回的 X-Vqd-Hash-1 挑战值, 计算新的 hash 值.
 //
 //	vqdHashRequest: 服务端响应头的 X-Vqd-Hash-1 值 (base64)
+//	ua:             本请求身份(proxys.Identity)的 UA —— 挑战把 navigator.userAgent
+//	                算进 client_hashes[0], 服务端会拿请求头里的 UA 复算比对, 所以
+//	                这里必须传的就是即将发出去的那个 UA, 不能在内部另取一个默认值.
 //	返回: 新的 X-Vqd-Hash-1 请求头值 (base64)
 //
 // 环境变量覆盖:
 //
-//	X_USER_AGENT   - 替换默认 UA
 //	X_VQD_STACK    - 替换默认调用栈 (meta.stack)
 //	X_VQD_ORIGIN   - 替换默认 origin (默认 https://duck.ai)
-func GenerateVQDHash(vqdHashRequest string) (string, error) {
+//
+// (UA 的覆盖走 ua.go 的 X_USER_AGENT, 见 UAFor。)
+func GenerateVQDHash(vqdHashRequest string, ua string) (string, error) {
 	if vqdHashRequest == "" {
 		return "", errors.New("empty vqd hash request")
 	}
@@ -50,7 +53,7 @@ func GenerateVQDHash(vqdHashRequest string) (string, error) {
 	}
 	jsCode := string(decoded)
 
-	payload, err := executeVQDHashScript(jsCode)
+	payload, err := executeVQDHashScript(jsCode, ua)
 	if err != nil {
 		// 匹配 JS c(e, t) 的 fallback 格式 (line 53743-53751)
 		fallback := fmt.Sprintf("%s::%s::%s::%s",
@@ -59,13 +62,6 @@ func GenerateVQDHash(vqdHashRequest string) (string, error) {
 	}
 
 	return base64.StdEncoding.EncodeToString([]byte(payload)), nil
-}
-
-func vqdUserAgent() string {
-	if v := os.Getenv("X_USER_AGENT"); v != "" {
-		return v
-	}
-	return defaultVQDUserAgent
 }
 
 func vqdStack() string {
@@ -82,11 +78,11 @@ func vqdOrigin() string {
 	return defaultVQDOrigin
 }
 
-func executeVQDHashScript(jsCode string) (string, error) {
+func executeVQDHashScript(jsCode string, ua string) (string, error) {
 	startMs := time.Now().UnixMilli()
 
 	vm := goja.New()
-	if err := installVQDHelpers(vm); err != nil {
+	if err := installVQDHelpers(vm, ua); err != nil {
 		return "", err
 	}
 	if _, err := vm.RunString(vqdBrowserPrelude); err != nil {
@@ -131,9 +127,9 @@ func executeVQDHashScript(jsCode string) (string, error) {
 	return payload.String(), nil
 }
 
-func installVQDHelpers(vm *goja.Runtime) error {
+func installVQDHelpers(vm *goja.Runtime, ua string) error {
 	helpers := map[string]interface{}{
-		"__goUserAgent":    vqdUserAgent(),
+		"__goUserAgent":    ua,
 		"__goOrigin":       vqdOrigin(),
 		"__goStack":        vqdStack(),
 		"__goSha256Base64": goSha256Base64,

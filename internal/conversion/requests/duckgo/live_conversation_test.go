@@ -27,7 +27,9 @@ func TestLiveConversationMemory(t *testing.T) {
 	}
 
 	client := resty.NewStdClient()
-	token, err := dkgo.InitXVQD(client, "")
+	// 直连身份: 每次跑随机一个指纹, 与网关启动时的行为一致。
+	ua := dkgo.UAFor(-1)
+	token, err := dkgo.InitXVQD(client, "", ua)
 	if err != nil {
 		t.Skipf("拿不到挑战(多半是限流窗口), 稍后重试: %v", err)
 	}
@@ -45,7 +47,7 @@ func TestLiveConversationMemory(t *testing.T) {
 		} else {
 			firstDS = tr.DurableStream
 		}
-		resp, err := dkgo.POSTconversation(client, tr, token, "")
+		resp, err := dkgo.POSTconversation(client, tr, token, "", ua)
 		if err != nil {
 			t.Fatalf("POSTconversation: %v", err)
 		}

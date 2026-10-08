@@ -27,10 +27,6 @@ import (
 var (
 	Token     *XqdgToken
 	FEVersion *XqdgToken
-	// 说明: 服务端会校验 UA —— 同一请求下 Linux/macOS 的 UA 会被接受, Windows 的 UA 一律
-	// 返回 418 ERR_CHALLENGE (实测 2026-10)。这个 UA 必须与 vqd.go 里 defaultVQDUserAgent
-	// 完全一致: 挑战把 navigator.userAgent 算进 client_hashes[0], 服务端会拿请求头里的 UA 复算比对。
-	UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 )
 
 type XqdgToken struct {
@@ -50,7 +46,7 @@ var chalRetryDelays = []time.Duration{
 	1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second,
 }
 
-func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string) (string, error) {
+func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string, ua string) (string, error) {
 	if Token == nil {
 		Token = &XqdgToken{
 			Token: "",
@@ -64,7 +60,7 @@ func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string) (string, erro
 	if Token.Token == "" {
 		lastErr := error(ErrChallengeUnavailable)
 		for attempt := 0; ; attempt++ {
-			status, err := postStatus(client, proxyUrl)
+			status, err := postStatus(client, proxyUrl, ua)
 			if err != nil {
 				lastErr = err // 网络/代理抖动, 同样退避重试
 			} else {
@@ -73,7 +69,7 @@ func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string) (string, erro
 				if vqdHash != "" {
 					// 拿到挑战就算成功一半: 解算失败属于另一类问题(GenerateVQDHash
 					// 内部已有 fallback), 不再按限速重试。
-					token, tokenErr := GenerateVQDHash(vqdHash)
+					token, tokenErr := GenerateVQDHash(vqdHash, ua)
 					if tokenErr != nil {
 						return "", tokenErr
 					}
@@ -94,11 +90,11 @@ func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string) (string, erro
 	return Token.Token, nil
 }
 
-func postStatus(client httpclient.AuroraHttpClient, proxyUrl string) (*http.Response, error) {
+func postStatus(client httpclient.AuroraHttpClient, proxyUrl string, ua string) (*http.Response, error) {
 	if proxyUrl != "" {
 		client.SetProxy(proxyUrl)
 	}
-	header := createHeader()
+	header := createHeader(ua)
 	header.Set("accept", "*/*")
 	header.Set("x-vqd-accept", "1")
 	response, err := client.Request(httpclient.GET, "https://duck.ai/duckchat/v1/status", header, nil, nil)
@@ -108,7 +104,7 @@ func postStatus(client httpclient.AuroraHttpClient, proxyUrl string) (*http.Resp
 	return response, nil
 }
 
-func POSTconversation(client httpclient.AuroraHttpClient, request duckgotypes.ApiRequest, token string, proxyUrl string) (*http.Response, error) {
+func POSTconversation(client httpclient.AuroraHttpClient, request duckgotypes.ApiRequest, token string, proxyUrl string, ua string) (*http.Response, error) {
 	if proxyUrl != "" {
 		client.SetProxy(proxyUrl)
 	}
@@ -118,7 +114,7 @@ func POSTconversation(client httpclient.AuroraHttpClient, request duckgotypes.Ap
 	var err error
 
 	for i := 0; i <= maxRetries; i++ {
-		response, err = postConversationOnce(client, request, token)
+		response, err = postConversationOnce(client, request, token, ua)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +139,7 @@ func POSTconversation(client httpclient.AuroraHttpClient, request duckgotypes.Ap
 		}
 
 		ResetXVQD()
-		token, err = InitXVQD(client, proxyUrl)
+		token, err = InitXVQD(client, proxyUrl, ua)
 		if err != nil {
 			return nil, err
 		}
@@ -180,40 +176,44 @@ func Handle_request_error(c *gin.Context, response *http.Response) bool {
 	return false
 }
 
-func createHeader() httpclient.AuroraHeaders {
+func createHeader(ua string) httpclient.AuroraHeaders {
 	header := make(httpclient.AuroraHeaders)
 	header.Set("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
 	header.Set("content-type", "application/json")
 	header.Set("origin", "https://duck.ai")
 	header.Set("referer", "https://duck.ai/")
-	header.Set("sec-ch-ua", `"Google Chrome";v="145", "Chromium";v="145", "Not:A;Brand";v="24"`)
+	// 客户端提示从 UA 反推 (ua.go 的 chromeHints): 同一个指纹里 UA 与 sec-ch-ua 必须
+	// 自洽, 所以不另存一张表 —— 两份来源迟早会不一致。认不出来就不发这两个头。
+	if secChUA, platform := chromeHints(ua); secChUA != "" {
+		header.Set("sec-ch-ua", secChUA)
+		header.Set("sec-ch-ua-platform", `"`+platform+`"`)
+	}
 	header.Set("sec-ch-ua-mobile", "?0")
-	header.Set("sec-ch-ua-platform", `"Linux"`)
 	header.Set("sec-fetch-dest", "empty")
 	header.Set("sec-fetch-mode", "cors")
 	header.Set("sec-fetch-site", "same-origin")
-	header.Set("user-agent", UA)
+	header.Set("user-agent", ua)
 	return header
 }
 
-func postConversationOnce(client httpclient.AuroraHttpClient, request duckgotypes.ApiRequest, token string) (*http.Response, error) {
+func postConversationOnce(client httpclient.AuroraHttpClient, request duckgotypes.ApiRequest, token string, ua string) (*http.Response, error) {
 	bodyJSON, err := json.Marshal(request)
 	if err != nil {
 		return &http.Response{}, err
 	}
-	header := createHeader()
+	header := createHeader(ua)
 	header.Set("accept", "text/event-stream")
 	header.Set("priority", "u=1, i")
 	header.Set("x-ddg-journey-id", RandomHex(16))
 	header.Set("x-fe-signals", CreateFESignals())
-	if feVersion, err := InitFEVersion(client, ""); err == nil && feVersion != "" {
+	if feVersion, err := InitFEVersion(client, "", ua); err == nil && feVersion != "" {
 		header.Set("x-fe-version", feVersion)
 	}
 	header.Set("x-vqd-hash-1", token)
 	return client.Request(httpclient.POST, "https://duck.ai/duckchat/v1/chat", header, nil, bytes.NewBuffer(bodyJSON))
 }
 
-func InitFEVersion(client httpclient.AuroraHttpClient, proxyUrl string) (string, error) {
+func InitFEVersion(client httpclient.AuroraHttpClient, proxyUrl string, ua string) (string, error) {
 	if FEVersion == nil {
 		FEVersion = &XqdgToken{
 			Token: "",
@@ -229,7 +229,7 @@ func InitFEVersion(client httpclient.AuroraHttpClient, proxyUrl string) (string,
 	if proxyUrl != "" {
 		client.SetProxy(proxyUrl)
 	}
-	header := createHeader()
+	header := createHeader(ua)
 	header.Set("accept", "text/html")
 	response, err := client.Request(httpclient.GET, "https://duck.ai/", header, nil, nil)
 	if err != nil {
