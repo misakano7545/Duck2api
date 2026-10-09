@@ -27,8 +27,8 @@ func TestLiveConversationMemory(t *testing.T) {
 	}
 
 	client := resty.NewStdClient()
-	// 直连身份: 每次跑随机一个指纹, 与网关启动时的行为一致。
-	ua := dkgo.UAFor(-1)
+	// 直连身份: 每次跑生成一个新指纹, 与网关启动时的行为一致。
+	ua := dkgo.RandomUA()
 	token, err := dkgo.InitXVQD(client, "", ua)
 	if err != nil {
 		t.Skipf("拿不到挑战(多半是限流窗口), 稍后重试: %v", err)

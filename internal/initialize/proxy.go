@@ -11,10 +11,10 @@ import (
 
 func checkProxy() *proxys.IProxy {
 	var idents []proxys.Identity
-	// 每个出口配一个不同的 UA(轮转分配): 上游按客户端指纹限速, 而指纹里既有出口 IP
-	// 也有 UA —— 身份之间复用 UA 等于没换身份。UA 池与分配规则见 duckgo.UAFor。
+	// 每个身份配一个**新生成**的 UA：上游按「出口 IP + 指纹」限速，身份之间复用 UA
+	// 等于没换身份。UA 是生成的不是枚举的，见 duckgo.RandomUA。
 	add := func(proxy string) {
-		idents = append(idents, proxys.Identity{Proxy: proxy, UA: duckgo.UAFor(len(idents))})
+		idents = append(idents, proxys.Identity{Proxy: proxy, UA: duckgo.RandomUA()})
 	}
 
 	proxyUrl := os.Getenv("PROXY_URL")
@@ -51,11 +51,9 @@ func checkProxy() *proxys.IProxy {
 	}
 
 	if len(idents) == 0 {
-		// 直连: UAFor(-1) 随机取一个 UA, 于是每次启动都是一个新指纹 —— 上游按指纹
-		// 计的限速窗口随之换桶(重启即换额度), 不需要代理也能做到。
-		// 注意不能走上面的 add(): 它按 len(idents) 分配, 直连时恒为 0, 每次启动都
-		// 抽到同一个 UA, 指纹根本不会变。
-		idents = append(idents, proxys.Identity{Proxy: "", UA: duckgo.UAFor(-1)})
+		// 直连: 也走同一个 add()，生成的 UA 每次启动都不同 —— 上游按指纹计的窗口
+		// 随之换桶（重启即换额度），不需要代理。
+		add("")
 	}
 
 	// 启动时把身份打出来: 换没换指纹要看得见, 不然排障只能靠猜。

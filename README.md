@@ -295,22 +295,25 @@ http://proxy2:8080
 socks5://proxy3:1080
 ```
 
-**每个出口自动配一个不同的 UA 指纹**（按行号轮转分配，池子在 `internal/duckgo/ua.go`）。
+**每个身份生成一个指纹 UA，不是从固定池子里挑**（`internal/duckgo/ua.go` 的 `RandomUA`）。
 上游按「出口 IP + 客户端指纹」限速，身份之间复用 UA 等于没换身份。
 
-- 指纹池只有 **5 个 UA**（Chrome 144/145/146 × Linux/macOS），只有 Linux/macOS 的 Chrome UA 会被
-  接受：Windows 的 UA 一律 `418 ERR_CHALLENGE`，TLS 指纹伪装客户端（OkHttp/Chrome_146/Firefox/
-  Safari profile）也一律被拒（实测 2026-10）。所以身份多于 5 个时 UA 循环复用，但 (出口 IP, UA)
-  组合仍然唯一。出口指纹里唯一能按身份变的就是这个 UA 串。
-- 一个指纹里三处必须自洽：请求头 `user-agent`、`sec-ch-ua` / `sec-ch-ua-platform`、挑战脚本里的
-  `navigator.userAgent`。客户端提示由 UA 反推（`chromeHints`），不另维护一张表 —— 两份来源打架
-  就是 418 的成因。
-- **没有代理（直连）时每次启动随机一个指纹**：上限按指纹计，重启即换额度。要固定就设
-  `X_USER_AGENT`（设了则所有身份共用这一个）。
+- **UA 基本是自由字段。** 实测 12/12 全过：Windows Chrome 131/145、Edge、Android、**Safari
+  （连 Chrome 版本都没有）**、Chrome **100** 与 **160**、Ubuntu/Fedora 的 Linux 串。所以按
+  `平台 × Chrome 版本`（7 × 39）生成，指纹用不完。
+- 真正会被拒的是**客户端提示与 UA 自相矛盾**那一类。旧代码把 `sec-ch-ua-platform` 写死
+  `"Linux"`，于是 Windows UA 一律 418 —— 当时被误读成「Windows UA 不被接受」（连 macOS 也被
+  无谓排除）。现在客户端提示由 UA 反推（`chromeHints`），Windows 直接过。**别再加第二张常量表**，
+  两份来源迟早打架。
+- **没有代理（直连）时每次启动生成一个新指纹**。要固定就设 `X_USER_AGENT`。
 - 启动时打 `identity` 日志行，换没换指纹看得见。
 
-实测（2026-10）：池内 5 个 UA 逐个真打上游 **5/5 通过**；直连连起 8 次抽到 **4 个不同指纹**；
-5 身份轮转连发 7 次 **7/7 = 200，日志 0 次 418/429**（含 Linux↔macOS 回切）。
+**限速是按指纹分桶的**（实测）：同一指纹连发，第 6 次吃 `429 challenge_unavailable`；
+**不等冷却**换成新指纹立刻 200。所以换指纹就是换额度 —— 重启换一次，配 `proxies.txt` 则每个
+出口各有一份。
+
+实测（2026-10）：12 个候选 UA **12/12 通过**；连起 8 次生成 **8 个不同指纹**且逐个真打上游通过；
+5 身份轮转连发 7 次 **7/7 = 200、日志 0 次 418/429**（含 Linux↔macOS 回切）。
 
 > `duckgo.Token` 仍是全局单例，没有按身份隔离。实测同一出口 5 个身份轮转不串号（模式见上），
 > 所以没加「每身份一份 token」的开销；**跨出口 IP 是否同样成立没测过**（手上没有节点）。

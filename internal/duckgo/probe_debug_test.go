@@ -13,7 +13,7 @@ import (
 // browser produces (signals={}, debug="N\u001f").
 func TestProbeValues(t *testing.T) {
 	vm := goja.New()
-	if err := installVQDHelpers(vm, uaPool[0]); err != nil {
+	if err := installVQDHelpers(vm, testUA); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := vm.RunString(vqdBrowserPrelude); err != nil {

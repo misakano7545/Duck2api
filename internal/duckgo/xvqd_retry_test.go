@@ -41,7 +41,7 @@ func TestInitXVQDRetriesThenReportsRateLimit(t *testing.T) {
 	}()
 
 	client := &fakeStatusClient{} // hash 为空 = 上游限速
-	_, err := InitXVQD(client, "", uaPool[0])
+	_, err := InitXVQD(client, "", testUA)
 	if !errors.Is(err, ErrChallengeUnavailable) {
 		t.Fatalf("err = %v, want ErrChallengeUnavailable", err)
 	}
@@ -66,7 +66,7 @@ func TestInitXVQDNoRetryWhenChallengePresent(t *testing.T) {
 
 	// 非法 base64 → GenerateVQDHash 直接报错(合法脚本即使跑不起来也只走 fallback, 不报错)
 	client := &fakeStatusClient{hash: "!!!not-base64!!!"}
-	if _, err := InitXVQD(client, "", uaPool[0]); err == nil {
+	if _, err := InitXVQD(client, "", testUA); err == nil {
 		t.Fatal("expected error for undecodable challenge")
 	}
 	if client.calls != 1 {

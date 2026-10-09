@@ -7,45 +7,44 @@ import (
 	"strings"
 )
 
-// uaPool 可用的指纹 UA。
+// 指纹 UA 是**生成**的，不是从固定池子里挑的。
 //
-// 实测 (2026-10): 只有 Linux/macOS 的 Chrome UA 会被接受。Windows 的 UA 一律
-// 418 ERR_CHALLENGE; TLS 指纹伪装客户端 (OkHttp4Android13 / Chrome_146 / Firefox /
-// Safari profile) 也一律被拒 —— 出口指纹里唯一能按身份变的就只有这个 UA 串。
-// 所以池子里只放 Linux/macOS, 靠 Chrome 版本号区分指纹。
+// 实测（2026-10，12/12 全过）：Windows / Edge / Android / Safari（连 Chrome 版本都没有）
+// / Chrome 100 与 160 都能拿到挑战 —— UA 基本是自由字段。真正被拒的只有「客户端提示与 UA
+// 自相矛盾」那一类：旧代码把 sec-ch-ua-platform 写死 "Linux"，于是 Windows UA 一律 418，
+// 当时被误读成「Windows UA 不被接受」；现在由 chromeHints 从 UA 反推，Windows 直接过。
 //
-// ponytail: 只变版本号, 不动挑战 mock 里的 navigator.platform —— 那个至今写死
-// "Win32", 而 header 的 sec-ch-ua-platform 是 "Linux", 上游照样放行, 说明它只比对
-// navigator.userAgent 那一项。要更"像"真实浏览器就得连 mock 的 platform/screen/
-// languages 一起参数化, 现在没有必要。
-var uaPool = []string{
-	// 默认那个 (Chrome 145 / Linux) 放在首位: 它是唯一长期实测过的, 出了问题先回到它。
-	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+// 所以枚举成池子是把上限白白钉死在池子大小上（5 个），生成则是用不完的。
+// ponytail: 只组合 OS + Chrome 版本；实测够用。要更"真"再加 WebKit 版本/语言/screen
+// （挑战 mock 里那些值仍是常量，且实测不参与校验）。
+var uaPlatforms = []string{
+	"X11; Linux x86_64",
+	"X11; Ubuntu; Linux x86_64",
+	"X11; Fedora; Linux x86_64",
+	"Macintosh; Intel Mac OS X 10_15_7",
+	"Macintosh; Intel Mac OS X 13_6_0",
+	"Macintosh; Intel Mac OS X 14_5_0",
+	"Windows NT 10.0; Win64; x64",
 }
 
-// UAFor 取第 i 个身份的 UA。
+// 实测通过带是 100~160，取内侧，免得撞边界。
+const (
+	uaVersionMin = 120
+	uaVersionMax = 158
+)
+
+// RandomUA 生成一个指纹 UA。
 //
-//   - i >= 0: 轮转分配。有几个 UA 就有几种指纹, 身份多于 UA 数时循环复用
-//     (出口 IP 不同, (IP, UA) 组合仍然唯一)。
-//   - i < 0: 直连(没有代理身份)。随机取一个 —— 每次进程启动都是一个新指纹,
-//     上游按指纹计的限速窗口也随之换桶。
-//
-// X_USER_AGENT 优先级最高: 设了它则所有身份共用这一个 (旧行为, 单身份调试用)。
-func UAFor(i int) string {
+// X_USER_AGENT 覆盖一切：要复现某个具体指纹，或排查「到底是不是 UA 的问题」，钉住它。
+func RandomUA() string {
 	if v := strings.TrimSpace(os.Getenv("X_USER_AGENT")); v != "" {
 		return v
 	}
-	if len(uaPool) == 0 {
-		return ""
-	}
-	if i < 0 {
-		return uaPool[int(randInt63n(int64(len(uaPool))))]
-	}
-	return uaPool[i%len(uaPool)]
+	plat := uaPlatforms[int(randInt63n(int64(len(uaPlatforms))))]
+	ver := uaVersionMin + int(randInt63n(int64(uaVersionMax-uaVersionMin+1)))
+	return fmt.Sprintf(
+		"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%d.0.0.0 Safari/537.36",
+		plat, ver)
 }
 
 var chromeVersionRE = regexp.MustCompile(`Chrome/(\d+)\.\d+\.\d+\.\d+`)
