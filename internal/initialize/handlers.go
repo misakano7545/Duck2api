@@ -30,7 +30,7 @@ type Handler struct {
 func NewHandle(proxy *proxys.IProxy) *Handler {
 	// Wire up file store for file_id resolution in chat
 	duckgoConvert.FileStore = func(fileID string) (string, string, []byte, bool) {
-		f, ok := fileStorage[fileID]
+		f, ok := lookupFile(fileID)
 		if !ok {
 			return "", "", nil, false
 		}

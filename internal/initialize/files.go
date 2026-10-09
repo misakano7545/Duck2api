@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,8 +44,39 @@ type StoredFile struct {
 	Created  int64
 }
 
-// fileStorage is a simple in-memory file store
-var fileStorage = make(map[string]*StoredFile)
+// fileStorage is a simple in-memory file store.
+//
+// 必须走下面三个 helper, 不要直接碰这个 map: gin 每个请求一个 goroutine, 而这里既被上传写、
+// 又被 chat 解析 file_id 时读 —— 裸 map 并发读写会命中运行时的不可恢复致命错误
+// (fatal error: concurrent map writes), 直接打死进程, gin 的 Recovery 接不住。
+var (
+	fileStorage   = make(map[string]*StoredFile)
+	fileStorageMu sync.RWMutex
+)
+
+func storeFile(f *StoredFile) {
+	fileStorageMu.Lock()
+	defer fileStorageMu.Unlock()
+	fileStorage[f.ID] = f
+}
+
+func lookupFile(id string) (*StoredFile, bool) {
+	fileStorageMu.RLock()
+	defer fileStorageMu.RUnlock()
+	f, ok := fileStorage[id]
+	return f, ok
+}
+
+// deleteFile 把存在性检查和删除放在同一把写锁里 —— 分开做会漏出 TOCTOU 窗口。
+func deleteFile(id string) bool {
+	fileStorageMu.Lock()
+	defer fileStorageMu.Unlock()
+	if _, ok := fileStorage[id]; !ok {
+		return false
+	}
+	delete(fileStorage, id)
+	return true
+}
 
 func (h *Handler) filesUpload(c *gin.Context) {
 	// Parse multipart form
@@ -94,13 +126,13 @@ func (h *Handler) filesUpload(c *gin.Context) {
 	}
 
 	// Store file
-	fileStorage[fileID] = &StoredFile{
+	storeFile(&StoredFile{
 		ID:       fileID,
 		Filename: header.Filename,
 		Bytes:    fileBytes,
 		MimeType: mimeType,
 		Created:  time.Now().Unix(),
-	}
+	})
 
 	c.JSON(200, FileObject{
 		ID:        fileID,
@@ -113,6 +145,7 @@ func (h *Handler) filesUpload(c *gin.Context) {
 }
 
 func (h *Handler) filesList(c *gin.Context) {
+	fileStorageMu.RLock()
 	files := make([]FileObject, 0, len(fileStorage))
 	for _, f := range fileStorage {
 		files = append(files, FileObject{
@@ -124,6 +157,7 @@ func (h *Handler) filesList(c *gin.Context) {
 			Purpose:   "assistants",
 		})
 	}
+	fileStorageMu.RUnlock()
 	c.JSON(200, gin.H{
 		"object": "list",
 		"data":   files,
@@ -132,7 +166,7 @@ func (h *Handler) filesList(c *gin.Context) {
 
 func (h *Handler) filesGet(c *gin.Context) {
 	fileID := c.Param("file_id")
-	f, ok := fileStorage[fileID]
+	f, ok := lookupFile(fileID)
 	if !ok {
 		c.JSON(404, gin.H{"error": gin.H{
 			"message": "File not found",
@@ -153,7 +187,7 @@ func (h *Handler) filesGet(c *gin.Context) {
 
 func (h *Handler) filesDelete(c *gin.Context) {
 	fileID := c.Param("file_id")
-	if _, ok := fileStorage[fileID]; !ok {
+	if !deleteFile(fileID) {
 		c.JSON(404, gin.H{"error": gin.H{
 			"message": "File not found",
 			"type":    "not_found_error",
@@ -161,7 +195,6 @@ func (h *Handler) filesDelete(c *gin.Context) {
 		}})
 		return
 	}
-	delete(fileStorage, fileID)
 	c.JSON(200, gin.H{
 		"id":      fileID,
 		"object":  "file",
@@ -171,7 +204,7 @@ func (h *Handler) filesDelete(c *gin.Context) {
 
 func (h *Handler) filesContent(c *gin.Context) {
 	fileID := c.Param("file_id")
-	f, ok := fileStorage[fileID]
+	f, ok := lookupFile(fileID)
 	if !ok {
 		c.JSON(404, gin.H{"error": gin.H{
 			"message": "File not found",
@@ -344,7 +377,7 @@ func (h *Handler) chatWithFiles(c *gin.Context) {
 	// Load files and append to first user message
 	if len(req.FileIDs) > 0 {
 		for _, fileID := range req.FileIDs {
-			f, ok := fileStorage[fileID]
+			f, ok := lookupFile(fileID)
 			if !ok {
 				c.JSON(400, gin.H{"error": gin.H{
 					"message": fmt.Sprintf("File %s not found", fileID),

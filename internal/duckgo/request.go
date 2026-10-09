@@ -24,9 +24,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Token / FEVersion 在声明处就初始化好。
+//
+// 原来它们靠「首次调用时 if Token == nil { Token = &XqdgToken{...} }」惰性赋值，而那个
+// 赋值发生在加锁**之前** —— 两个并发首请求会同时读到 nil 并各写一次全局指针
+// （-race 实测: write request.go:51 与 read request.go:50/:56 数据竞争）。
+// 包级变量在 init 阶段就绪，早于任何 goroutine，所以这里根本没有需要惰性的理由：
+// 删掉检查比给它加锁更小。
 var (
-	Token     *XqdgToken
-	FEVersion *XqdgToken
+	Token     = &XqdgToken{}
+	FEVersion = &XqdgToken{}
 )
 
 type XqdgToken struct {
@@ -47,12 +54,6 @@ var chalRetryDelays = []time.Duration{
 }
 
 func InitXVQD(client httpclient.AuroraHttpClient, proxyUrl string, ua string) (string, error) {
-	if Token == nil {
-		Token = &XqdgToken{
-			Token: "",
-			M:     sync.Mutex{},
-		}
-	}
 	Token.M.Lock()
 	// ponytail: 退避期间持锁, 并发调用会排队等同一个挑战(单账号代理场景足够);
 	// 要并行就得改成 singleflight + 各自退避, 现在不做。
@@ -214,12 +215,6 @@ func postConversationOnce(client httpclient.AuroraHttpClient, request duckgotype
 }
 
 func InitFEVersion(client httpclient.AuroraHttpClient, proxyUrl string, ua string) (string, error) {
-	if FEVersion == nil {
-		FEVersion = &XqdgToken{
-			Token: "",
-			M:     sync.Mutex{},
-		}
-	}
 	FEVersion.M.Lock()
 	defer FEVersion.M.Unlock()
 	if FEVersion.Token != "" && FEVersion.ExpireAt.After(time.Now()) {
@@ -305,9 +300,6 @@ func RandomHex(byteLength int) string {
 }
 
 func ResetXVQD() {
-	if Token == nil {
-		return
-	}
 	Token.M.Lock()
 	defer Token.M.Unlock()
 	Token.Token = ""
