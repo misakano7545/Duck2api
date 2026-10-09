@@ -53,9 +53,9 @@ func ToolInstruction(toolsDoc string, hasCustom bool) string {
 // 选对工具的描述。所以按 `名字(参数:类型) — 描述` 压成一行一个, 其余的 JSON Schema
 // 细节(嵌套、枚举、additionalProperties…)对提示词模拟这条链路没有价值。
 const (
-	toolLineDescLimit  = 80  // 每个工具描述保留多少字符
-	customDescLimit    = 400 // 自由格式工具没有参数表, 描述就是它唯一的 API 文档, 多留些
-	toolDocCharLimit   = 8000
+	toolLineDescLimit = 80  // 每个工具描述保留多少字符
+	customDescLimit   = 400 // 自由格式工具没有参数表, 描述就是它唯一的 API 文档, 多留些
+	toolDocCharLimit  = 8000
 )
 
 // CompactToolList 把客户端的三种 tools 形状压成紧凑清单。
@@ -254,44 +254,56 @@ func customToolInput(arguments string) string {
 	return arguments
 }
 
-// StreamGate 边收边发的闸门。契约要求"调用工具时输出以 <tool_call> 开头",
-// 所以开头几个字符就能判定: 一旦确认不是工具调用就原样透传, 普通聊天的流式不受影响。
+// StreamGate 边收边发的闸门。约定里模型需要调用工具时应只吐 <tool_call>{...}</tool_call>，
+// 闸门负责把它扣住、交给 ParseToolCalls，其余文本照常流式透传。
+//
+// 判定是**滑窗**的，不看「这是不是第一段」：只要缓冲里出现完整标记就切到扣住。
+// 早先的版本只在第一段可见输出上判定一次 —— 模型先吐半句人话再给调用是常态，那样会被
+// 永久判成「不是工具调用」，标记当普通正文漏给客户端，那一轮 tool_calls 直接为空。
 type StreamGate struct {
-	active  bool // 只有本次请求带了工具定义才启用
-	decided bool
-	hold    bool
-	buf     strings.Builder
+	active bool // 只有本次请求带了工具定义才启用
+	hold   bool
+	buf    strings.Builder
 }
 
 func NewStreamGate(tools bool) *StreamGate { return &StreamGate{active: tools} }
 
 // Push 喂一段增量, 返回可以立刻下发的文本; hold=true 表示这段先扣住不发。
+//
+// 除「可能是标记前缀」的尾巴外一切照常下发, 所以普通聊天的流式不受影响; 那截尾巴最多
+// len(toolCallOpen)-1 字节, 是必要的 -- 否则标记跨越分块到达时会被切成两半、永远认不出来。
 func (g *StreamGate) Push(chunk string) (emit string, hold bool) {
 	if !g.active {
 		return chunk, false
 	}
-	if g.decided {
-		if g.hold {
-			g.buf.WriteString(chunk)
-			return "", true
-		}
-		return chunk, false
-	}
 	g.buf.WriteString(chunk)
-	cur := strings.TrimLeft(g.buf.String(), " \n\r\t")
-	if cur == "" {
+	if g.hold {
 		return "", true
 	}
-	if strings.HasPrefix(toolCallOpen, cur) {
-		return "", true // 还看不出是不是工具调用, 再等一块
-	}
-	g.decided = true
-	if strings.HasPrefix(cur, toolCallOpen) {
+	raw := g.buf.String()
+	if i := strings.Index(raw, toolCallOpen); i >= 0 {
+		g.buf.Reset()
+		g.buf.WriteString(raw[i:])
 		g.hold = true
-		return "", true
+		if i == 0 {
+			return "", true // 没有正文可发
+		}
+		return raw[:i], false // 标记之前的是正文，已到手的先发出去
 	}
-	out := g.buf.String() // 不是工具调用: 把扣住的补发, 之后正常流式
+	// 没有完整标记: 只扣住最长的、恰好是标记前缀的尾巴。
+	keep := 0
+	for k := len(toolCallOpen) - 1; k > 0; k-- {
+		if k <= len(raw) && raw[len(raw)-k:] == toolCallOpen[:k] {
+			keep = k
+			break
+		}
+	}
+	if keep > 0 && keep == len(raw) {
+		return "", true // 整段都还是前缀, 一个字节都发不了
+	}
+	out := raw[:len(raw)-keep]
 	g.buf.Reset()
+	g.buf.WriteString(raw[len(raw)-keep:])
 	return out, false
 }
 
