@@ -1,8 +1,10 @@
 package util
 
 import (
+	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"strings"
@@ -24,15 +26,19 @@ func RandomLanguage() string {
 	return languages[randomIndex]
 }
 
+// RandomHexadecimalString 返回 16 个十六进制字符的随机 ID —— 它是 tool_call id / message id
+// 的来源（duckgo.OfficialToolCalls、anthropic 的 toolu_/msg_）。
+//
+// 用 crypto/rand，不用 math/rand：原实现每次调用都 rand.Seed(time.Now().UnixNano())，而 Seed
+// 改的是**全局共享**随机源 —— 并发下「A 播种 → B 播种 → A 抽数」会让 A 拿到 B 的序列，
+// 同一纳秒内的两次调用必然撞号。（本机单线程 5 万次 / 并发 8×2 万次实测 0 碰撞，但那是运气
+// 不是保证；两个 tool_call 撞 id 会让客户端把两次调用认成同一个。）
 func RandomHexadecimalString() string {
-	rand.Seed(time.Now().UnixNano())
-	const charset = "0123456789abcdef"
-	const length = 16 // The length of the string you want to generate
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
+	buf := make([]byte, 8)
+	if _, err := crand.Read(buf); err != nil {
+		return fmt.Sprintf("%016x", time.Now().UnixNano())
 	}
-	return string(b)
+	return hex.EncodeToString(buf)
 }
 func CountToken(input string) int {
 	encoding := "gpt-4o-mini"

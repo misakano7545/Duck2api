@@ -1,6 +1,9 @@
 package duckgo
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 type DurableStream struct {
 	MessageID      string    `json:"messageId"`
@@ -70,6 +73,7 @@ func (m *MessageContent) IsEmpty() bool {
 	return true
 }
 
+// TextContent 只返回文本 part（给真正需要纯文本的地方用）。
 func (m *MessageContent) TextContent() string {
 	if m == nil {
 		return ""
@@ -81,6 +85,27 @@ func (m *MessageContent) TextContent() string {
 		}
 	}
 	return text
+}
+
+// CountableText 返回供**体积估算**用的文本：除文本 part 外把图片的 base64 原文也算进来。
+//
+// 上限守卫（conversion/requests/duckgo/fit.go）数的是它。早先守卫只数 type=="text" 的 part，
+// 图片 part 对计数完全隐形 —— 带图的请求在守卫眼里是「空请求」，一路放行然后在上游撞
+// ERR_INPUT_LIMIT（实测：40KB 图只记账 15 字节，而同样体积的纯文本能被正常拦下）。
+func (m *MessageContent) CountableText() string {
+	if m == nil {
+		return ""
+	}
+	var sb strings.Builder
+	for _, p := range m.Parts {
+		switch p.Type {
+		case "text":
+			sb.WriteString(p.Text)
+		case "image":
+			sb.WriteString(p.Image)
+		}
+	}
+	return sb.String()
 }
 
 type messages struct {
@@ -131,7 +156,7 @@ func (a *ApiRequest) MessageText(i int) string {
 	if i < 0 || i >= len(a.Messages) {
 		return ""
 	}
-	return a.Messages[i].Content.TextContent()
+	return a.Messages[i].Content.CountableText()
 }
 
 // DropMessage 删掉第 i 条消息；越界是空操作。

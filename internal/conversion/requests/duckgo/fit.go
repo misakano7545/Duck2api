@@ -30,7 +30,10 @@ import (
 // 确定性失败已不重试），偏紧的代价大（会裁掉真实内容，或把一个上游本可服务的请求拒掉）。
 const DefaultMaxInputTokens = 7500
 
-// MaxInputTokens 生效上限；MAX_INPUT_TOKENS=0（或非法）按默认，负数表示关闭守卫。
+// MaxInputTokens 生效上限；MAX_INPUT_TOKENS 未设置/非法/0 都按默认，负数表示关闭守卫。
+//
+// 0 曾经是「关闭」，和注释、README 的说法都不一致（它们都说负数才关）——照注释配 0 的人会
+// 静默失去保护。现在统一成：0 = 默认，负数 = 关闭。
 func MaxInputTokens() int {
 	v := os.Getenv("MAX_INPUT_TOKENS")
 	if v == "" {
@@ -42,6 +45,9 @@ func MaxInputTokens() int {
 	}
 	if n < 0 {
 		return 0
+	}
+	if n == 0 {
+		return DefaultMaxInputTokens
 	}
 	return n
 }
